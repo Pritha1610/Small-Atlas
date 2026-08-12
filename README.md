@@ -1,6 +1,6 @@
 # Wonders — A Tiny Planet
 
-An explorable tiny planet built with [Three.js](https://threejs.org/) and [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh). Wander across a small procedurally generated world with toon-shaded terrain, water, a day sky, and a follow camera rig.
+This is a **basic scaffolding** repo — a starting point for an explorable tiny planet built with [Three.js](https://threejs.org/) and [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh). Wander across a small procedurally generated world with toon-shaded terrain, water, a day sky, and a follow camera rig. Use this as a base to build your own project on top of.
 
 ## Features
 
