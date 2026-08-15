@@ -39,7 +39,7 @@ export function createSky(): Sky {
     `,
   });
 
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1260, 32, 16), material);
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(630, 32, 16), material);
   mesh.renderOrder = -1;
   return { mesh, horizonColor: HORIZON.clone() };
 }

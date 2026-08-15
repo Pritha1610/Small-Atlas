@@ -19,12 +19,12 @@ const TURB = 0.35;
  */
 export function waveHeight(p: THREE.Vector3, t: number): number {
   const swell =
-    Math.sin(p.x * 0.06 + t * 0.78) +
-    Math.sin(p.z * 0.045 + t * 1.02) +
-    Math.sin(p.y * 0.037 + t * 0.6);
-  const chop = Math.sin(p.x * 0.21 - t * 1.35) * Math.sin(p.z * 0.19 + t * 1.05);
+    Math.sin(p.x * 0.12 + t * 0.78) +
+    Math.sin(p.z * 0.09 + t * 1.02) +
+    Math.sin(p.y * 0.074 + t * 0.6);
+  const chop = Math.sin(p.x * 0.42 - t * 1.35) * Math.sin(p.z * 0.38 + t * 1.05);
   const turb =
-    Math.sin(p.x * 0.52 + p.z * 0.47 + t * 2.3) * Math.sin(p.y * 0.44 - t * 1.9);
+    Math.sin(p.x * 1.04 + p.z * 0.94 + t * 2.3) * Math.sin(p.y * 0.88 - t * 1.9);
   return (swell / 3) * SWELL + chop * CHOP + turb * TURB;
 }
 
@@ -32,11 +32,11 @@ export function waveHeight(p: THREE.Vector3, t: number): number {
 const NEAR_ALPHA = 0.68;
 /**
  * View distance at which the sea has closed up completely, in world units.
- * Sized against the actual sightline, not guessed: with the camera ~3.6 units above a water
- * sphere of radius 153.6, the horizon is sqrt(2*153.6*3.6) ~= 33 units, so NO visible water is
- * ever further away than that. An earlier value of 58 put the whole ocean on the shallow part
- * of the ramp, peaking near 0.83 alpha, which is exactly why distant terrain still showed
- * through. Closing by 24 leaves a near band to see wrecks through and seals the rest.
+ * Sized against the actual sightline, not guessed: with the camera a few units above a water
+ * sphere of radius PLANET_RADIUS + WATER_Y, the horizon is only ~23 units away, so NO visible
+ * water is ever further off than that. Values well past the horizon put the whole ocean on the
+ * shallow part of the ramp and let distant terrain show through, which is the bug this fixes.
+ * Closing by 24 leaves a near band to read wrecks through and seals everything beyond.
  */
 const OPAQUE_AT = 24;
 /** Distance at which the water starts thickening. Below this you get the full near clarity. */
@@ -63,12 +63,12 @@ export function createWater(gradientMap: THREE.Texture): THREE.Mesh {
         `#include <begin_vertex>
         {
           float t = uTime;
-          float swell = sin(position.x * 0.06 + t * 0.78)
-                      + sin(position.z * 0.045 + t * 1.02)
-                      + sin(position.y * 0.037 + t * 0.6);
-          float chop = sin(position.x * 0.21 - t * 1.35) * sin(position.z * 0.19 + t * 1.05);
-          float turb = sin(position.x * 0.52 + position.z * 0.47 + t * 2.3)
-                     * sin(position.y * 0.44 - t * 1.9);
+          float swell = sin(position.x * 0.12 + t * 0.78)
+                      + sin(position.z * 0.09 + t * 1.02)
+                      + sin(position.y * 0.074 + t * 0.6);
+          float chop = sin(position.x * 0.42 - t * 1.35) * sin(position.z * 0.38 + t * 1.05);
+          float turb = sin(position.x * 1.04 + position.z * 0.94 + t * 2.3)
+                     * sin(position.y * 0.88 - t * 1.9);
           float h = (swell / 3.0) * ${SWELL.toFixed(3)}
                   + chop * ${CHOP.toFixed(3)}
                   + turb * ${TURB.toFixed(3)};

@@ -60,14 +60,14 @@ const sky = createSky();
 scene.add(sky.mesh);
 // Sightline geometry: the ground horizon is ~33 units at R=150, but a 60-unit peak stays
 // visible from ~130, so fog has to reach past the horizon to haze distant mountains.
-const fog = new THREE.Fog(sky.horizonColor, 45, 170);
+const fog = new THREE.Fog(sky.horizonColor, 24, 90);
 scene.fog = fog;
 
 const camera = new THREE.PerspectiveCamera(
   55,
   window.innerWidth / window.innerHeight,
   0.1,
-  1600
+  800
 );
 
 // Two passes, the second writing straight to the screen. HDR target so the glow has headroom
@@ -126,11 +126,11 @@ const spawnDir = start.clone().normalize();
 // which moves the ground out from under the analytic height used to pick the spot.
 function snapToGround(): void {
   const probe = new THREE.Raycaster(
-    spawnDir.clone().multiplyScalar(PLANET_RADIUS + 90),
+    spawnDir.clone().multiplyScalar(PLANET_RADIUS + 45),
     spawnDir.clone().negate()
   );
   probe.near = 0;
-  probe.far = 135;
+  probe.far = 68;
   probe.firstHitOnly = true;
   const hit = probe.intersectObject(planet.mesh, false);
   if (hit.length > 0) start.copy(hit[0].point);

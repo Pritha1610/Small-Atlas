@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { fbm, ridged } from './noise';
 import { makeOutline } from '../render/toon';
 
-export const PLANET_RADIUS = 150;
-export const WATER_Y = 3.6;
+export const PLANET_RADIUS = 75;
+export const WATER_Y = 1.8;
 
 // The noise is sampled on the unit direction vector, so one noise cell spans PLANET_RADIUS/freq
 // world units and fbm's mean is well below 0.5 at low frequencies. Every constant below was
@@ -20,21 +20,21 @@ const SHELF_SEA = 0.22;
 // the whole 15-unit rise into ~18 horizontal units, i.e. a 40-degree ramp before noise, and a
 // measured 30% of the coastline came out past the controller's 60-degree climb limit. The sea
 // side was worse: 16.5 units of drop over ~13, so the water was chest-deep a few steps out.
-const PLAIN_H = 8;
-const INLAND_SLOPE = 52;
-const OCEAN_D = 14;
+const PLAIN_H = 4;
+const INLAND_SLOPE = 26;
+const OCEAN_D = 7;
 // Lower frequency = wider mountains. Height and width are raised together on purpose: a taller
 // peak at the same width is just a steeper wall, and the brief is "high but trekkable".
 const MTN_FREQ = 0.74;
-const MTN_AMP = 82;
+const MTN_AMP = 41;
 const MTN_POW = 1.25; // 1.6 carved knife-edge ridges; this keeps relief but climbable flanks
 const MTN_MASK_FREQ = 1.3;
 const HILL_FREQ = 2.3;
-const HILL_AMP = 7.2;
+const HILL_AMP = 3.6;
 const PLAT_MASK_FREQ = 1.6;
-const PLAT_STEP = 6;
+const PLAT_STEP = 3;
 const VAL_FREQ = 2.55;
-const VAL_DEPTH = 9;
+const VAL_DEPTH = 4.5;
 // Offsets decorrelate the masks; added before the frequency multiply so they shift many cells.
 const O1 = 17.3;
 const O2 = -31.7;
@@ -109,12 +109,12 @@ const ROCK = new THREE.Color('#a09a8c');
 const PEAK = new THREE.Color('#e8e6de');
 
 const ANCHORS: Array<[number, THREE.Color]> = [
-  [WATER_Y - 1.8, SEA_FLOOR],
-  [WATER_Y + 0.9, SAND],
-  [10.2, GRASS],
-  [18.0, FOREST],
-  [26.1, ROCK],
-  [42.3, PEAK],
+  [WATER_Y - 0.9, SEA_FLOOR],
+  [WATER_Y + 0.45, SAND],
+  [5.1, GRASS],
+  [9.0, FOREST],
+  [13.1, ROCK],
+  [21.2, PEAK],
 ];
 
 function terrainColor(h: number, out: THREE.Color): void {
@@ -138,7 +138,7 @@ export function createPlanet(gradientMap: THREE.Texture): Planet {
   // detail 72 gives a ~2.5-unit edge at R=150. Terrain constants are all scaled with the
   // radius and the noise frequencies are not, so the landforms are the same shapes three times
   // larger: rise and run scale together, which keeps every slope (and so walkability) intact.
-  const geo = new THREE.IcosahedronGeometry(PLANET_RADIUS, 72);
+  const geo = new THREE.IcosahedronGeometry(PLANET_RADIUS, 52);
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const count = pos.count;
 

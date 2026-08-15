@@ -5,9 +5,9 @@ import type { Speaker, Landmark } from '../world/settlements';
 /** Close enough to read a name badge; the prompt appears inside this. */
 const TALK_RANGE = 7;
 /** Landmarks are big, so you can examine them from further out than you can talk to someone. */
-const EXAMINE_RANGE = 22;
+const EXAMINE_RANGE = 13;
 /** An overheard murmur needs you closer than the prompt, so passers-by feel incidental. */
-const AMBIENT_RANGE = 14;
+const AMBIENT_RANGE = 10;
 const AMBIENT_EVERY = 6.5;
 const AMBIENT_HOLD = 4.5;
 const PANEL_HOLD = 9;

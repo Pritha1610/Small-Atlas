@@ -11,8 +11,8 @@ const GREENS = [
   new THREE.Color('#68b36b'),
 ];
 
-const TREE_COUNT = 2400;
-const GRASS_COUNT = 90000;
+const TREE_COUNT = 1600;
+const GRASS_COUNT = 46000;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 export interface Props {
@@ -80,7 +80,7 @@ function grassTuft(): THREE.BufferGeometry {
 // At R=150 the horizon is only ~33 units away and the visible ground is ~1% of the sphere, so
 // splitting the scatter into cells turns that into a cull of nearly everything. One cell is
 // roughly the size of the visible cap; finer than that just adds objects to frustum-test.
-const CHUNKS = 128;
+const CHUNKS = 96;
 
 function chunkCells(n: number): THREE.Vector3[] {
   const cells: THREE.Vector3[] = [];
@@ -114,8 +114,8 @@ export function createProps(gradientMap: THREE.Texture, planetMesh: THREE.Mesh):
   const group = new THREE.Group();
   const sampler = new MeshSurfaceSampler(planetMesh).build();
 
-  const trees = scatter(sampler, TREE_COUNT, WATER_Y + 4.8, 33, 0.86);
-  const grass = scatter(sampler, GRASS_COUNT, WATER_Y + 1.2, 33, 0.8);
+  const trees = scatter(sampler, TREE_COUNT, WATER_Y + 2.4, 17, 0.86);
+  const grass = scatter(sampler, GRASS_COUNT, WATER_Y + 0.6, 17, 0.8);
 
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();

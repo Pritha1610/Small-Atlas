@@ -13,8 +13,12 @@ const CLEARANCE = 0.1;
 const DOWN_PROBE_OFFSET = 1.0;
 // Bounds the per-substep fall distance to stay inside DOWN_PROBE_OFFSET.
 const MAX_FALL = 35;
-// Comfortably outside the tallest terrain (max radius ~67), for the fell-through-the-world probe.
-const PROBE_HEIGHT = 95;
+// The fell-through-the-world probe fires INWARD from outside the planet, so its start is an
+// absolute radius, not a height above the player. It is derived from the water radius rather
+// than hard-coded because a hard-coded 95 silently ended up INSIDE the planet when the world was
+// rescaled, which left the safety net firing from under the terrain and doing nothing at all.
+// 1.75x clears the tallest peaks with room to spare at any planet size.
+const PROBE_SCALE = 1.75;
 const STEP = 0.55;
 // How high you can haul yourself while wading. The water clamp pins you to the waterline, so
 // with the normal step height a beach only had to rise 0.65 above sea level before the
@@ -163,9 +167,10 @@ export class Controller {
       // world. Probe inward from outside the planet to find the true surface; if the feet are
       // beneath it, put them back on top. Only runs when nothing was found below, so it costs
       // one extra raycast on genuinely airborne frames.
-      this._ray.set(this._downOrigin.copy(up).multiplyScalar(PROBE_HEIGHT), downDir);
+      const probeR = waterRadius * PROBE_SCALE;
+      this._ray.set(this._downOrigin.copy(up).multiplyScalar(probeR), downDir);
       this._ray.near = 0;
-      this._ray.far = PROBE_HEIGHT;
+      this._ray.far = probeR;
       const outside = this._ray.intersectObjects(collidables, false);
       if (outside.length > 0 && this.feet.length() < outside[0].point.length() - 0.01) {
         this.feet.copy(outside[0].point).addScaledVector(up, CLEARANCE);

@@ -26,7 +26,7 @@ const EL_MIN = THREE.MathUtils.degToRad(8);
 const EL_MAX = THREE.MathUtils.degToRad(62);
 const AZ_FROM = THREE.MathUtils.degToRad(-70);
 const AZ_TO = THREE.MathUtils.degToRad(70);
-const SUN_DIST = 140;
+const SUN_DIST = 70;
 
 // How far fog is pulled off the horizon colour toward the zenith. The sky shader blends
 // horizon->zenith with smoothstep(-0.05, 0.55, y), so at the eye-level band it is already part

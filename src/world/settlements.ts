@@ -23,16 +23,16 @@ interface Band {
 const BANDS: Band[] = [
   {
     kind: 'drowned',
-    loH: WATER_Y - 7,
-    hiH: WATER_Y + 1.5,
+    loH: WATER_Y - 3.5,
+    hiH: WATER_Y + 0.75,
     kit: ['S_HalfSunk', 'S_RoofShack', 'S_StiltHouse', 'S_Pontoon'],
     life: 0,
     count: [3, 6],
   },
   {
     kind: 'waterline',
-    loH: WATER_Y + 1.5,
-    hiH: WATER_Y + 9,
+    loH: WATER_Y + 0.75,
+    hiH: WATER_Y + 4.5,
     kit: [
       'S_StiltHouse',
       'S_StiltCluster',
@@ -48,32 +48,32 @@ const BANDS: Band[] = [
   },
   {
     kind: 'shore',
-    loH: WATER_Y + 9,
-    hiH: 24,
+    loH: WATER_Y + 4.5,
+    hiH: 12,
     kit: ['S_Shanty', 'S_AFrame', 'S_LeanTo', 'S_Container', 'S_CartHome', 'S_NetHut', 'S_RoofShack'],
     life: 0.6,
     count: [4, 8],
   },
   {
     kind: 'upland',
-    loH: 24,
-    hiH: 44,
+    loH: 12,
+    hiH: 22,
     kit: ['S_Yurt', 'S_TerraceHouse', 'S_Watchtower', 'S_AFrame', 'S_CartHome', 'S_WaterCollector'],
     life: 1,
     count: [4, 9],
   },
   {
     kind: 'mountain',
-    loH: 44,
-    hiH: 78,
+    loH: 22,
+    hiH: 39,
     kit: ['M_AFrameHigh', 'M_LeanToRock', 'M_SledCart', 'M_YurtStone', 'S_Watchtower'],
     life: 1,
     count: [3, 6],
   },
   {
     kind: 'cave',
-    loH: 20,
-    hiH: 60,
+    loH: 10,
+    hiH: 30,
     kit: ['C_CaveHearth', 'C_CaveMouthTent', 'C_CaveRack', 'C_CaveWall', 'S_CliffCave', 'S_RockShelter'],
     life: 1,
     count: [3, 5],
@@ -105,13 +105,13 @@ const CLIPS_BY_BAND: Record<string, string[]> = {
 const ELDER_CLIPS = ['Rest_Sit', 'Rest_Lean', 'Idle_WeightShift', 'Idle_Scan'];
 const KID_CLIPS = ['Kid_Bounce', 'Kid_Fidget', 'Kid_Jump'];
 
-const SETTLEMENT_SLOTS = 26;
-const MIN_SEPARATION = 0.28; // radians between settlements
+const SETTLEMENT_SLOTS = 46;
+const MIN_SEPARATION = 0.17; // radians between settlements
 /** Only NPCs this close to the player get their mixer stepped. */
-const ANIM_RANGE = 90;
+const ANIM_RANGE = 45;
 // Every NPC is a skinned mesh with its own skeleton, so this is the real budget knob. A
 // resident per house reads as a crowd, not as the last people in a drowning world.
-const MAX_RESIDENTS = 60;
+const MAX_RESIDENTS = 95;
 const RESIDENT_CHANCE = 0.85;
 
 const pick = <T>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
@@ -210,9 +210,9 @@ export async function createSettlements(
 
   /** Exact surface point and face normal along a direction, or null where the ray misses. */
   function surfaceHit(dir: THREE.Vector3): { point: THREE.Vector3; normal: THREE.Vector3 } | null {
-    ray.set(dir.clone().multiplyScalar(PLANET_RADIUS + 95), down.copy(dir).negate());
+    ray.set(dir.clone().multiplyScalar(PLANET_RADIUS + 48), down.copy(dir).negate());
     ray.near = 0;
-    ray.far = 190;
+    ray.far = 96;
     const hit = ray.intersectObject(planetMesh, false);
     if (hit.length === 0 || !hit[0].face) return null;
     const normal = hit[0].face.normal.clone().transformDirection(planetMesh.matrixWorld).normalize();
@@ -302,13 +302,13 @@ export async function createSettlements(
         .addScaledVector(s2, Math.sin(a) * spread)
         .normalize();
 
-      if (avoid.some((v) => probe.angleTo(v) < 0.22)) continue;
+      if (avoid.some((v) => probe.angleTo(v) < 0.14)) continue;
       if (chosen.some((v) => probe.angleTo(v) < MIN_SEPARATION)) continue;
 
       const h = sampleHeight(probe);
-      const rel = relief(probe, 14 / PLANET_RADIUS);
+      const rel = relief(probe, 7 / PLANET_RADIUS);
       // Caves want a steep face; everything else wants ground you could build on.
-      const wantsSteep = rel > 9;
+      const wantsSteep = rel > 4.5;
       const candidates = BANDS.filter(
         (b) => h >= b.loH && h < b.hiH && (b.kind === 'cave') === wantsSteep
       );
@@ -329,7 +329,7 @@ export async function createSettlements(
 
     const [t1, t2] = tangents(dir);
     const n = band.count[0] + Math.floor(Math.random() * (band.count[1] - band.count[0] + 1));
-    const spreadUnits = 8 + n * 1.6;
+    const spreadUnits = 5 + n * 0.9;
     const placed: Occupied[] = [];
     const pending: Array<{ sdir: THREE.Vector3; clearance: number }> = [];
 

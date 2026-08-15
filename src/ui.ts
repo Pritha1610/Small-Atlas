@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { WonderSite } from './world/wonders';
 
 /** How close you have to get before a wonder is marked as visited on the map. */
-const VISIT_RADIUS = 16;
+const VISIT_RADIUS = 10;
 const MAP_SIZE = 148;
 
 export interface Hud {
