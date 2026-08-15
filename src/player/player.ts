@@ -1,14 +1,25 @@
 import * as THREE from 'three';
 import { Controller } from './controller';
+import { Input } from './input';
+import { loadModel, applyToonMaterial } from '../world/assets';
+
+export const PLAYER_SKINS = ['/models/character.glb', '/models/player.glb'];
+
+function findClip(clips: THREE.AnimationClip[], ...names: string[]): THREE.AnimationClip | undefined {
+  return clips.find((c) => names.some((n) => c.name.toLowerCase().includes(n)));
+}
 
 export class Player {
   group = new THREE.Group();
-  private model = new THREE.Group();
-  private legL = new THREE.Object3D();
-  private legR = new THREE.Object3D();
-  private armL = new THREE.Object3D();
-  private armR = new THREE.Object3D();
-  private body: THREE.Mesh;
+  private gradientMap: THREE.Texture;
+  private input: Input;
+  private model: THREE.Object3D = new THREE.Group();
+  private mixer: THREE.AnimationMixer | null = null;
+  private idleAction: THREE.AnimationAction | null = null;
+  private walkAction: THREE.AnimationAction | null = null;
+  private runAction: THREE.AnimationAction | null = null;
+  private skinIndex = 0;
+  private switching = false;
   private phase = 0;
   private facing = new THREE.Quaternion();
   private tmpQ = new THREE.Quaternion();
@@ -18,58 +29,55 @@ export class Player {
   private _xAxis = new THREE.Vector3();
   private _basis = new THREE.Matrix4();
 
-  constructor(gradientMap: THREE.Texture) {
-    const jacket = new THREE.MeshToonMaterial({ color: '#e76f51', gradientMap });
-    const pants = new THREE.MeshToonMaterial({ color: '#2a9d8f', gradientMap });
-    const skin = new THREE.MeshToonMaterial({ color: '#f4a261', gradientMap });
-    const dark = new THREE.MeshToonMaterial({ color: '#3a3a44', gradientMap });
+  private constructor(gradientMap: THREE.Texture, input: Input) {
+    this.gradientMap = gradientMap;
+    this.input = input;
+  }
 
-    const legGeo = new THREE.BoxGeometry(0.22, 0.5, 0.2);
-    const armGeo = new THREE.BoxGeometry(0.15, 0.44, 0.16);
+  static async create(gradientMap: THREE.Texture, input: Input): Promise<Player> {
+    const player = new Player(gradientMap, input);
+    await player.setSkin(0);
+    return player;
+  }
 
-    const legLMesh = new THREE.Mesh(legGeo, pants);
-    legLMesh.position.y = -0.25;
-    this.legL.position.set(-0.11, 0.55, 0);
-    this.legL.add(legLMesh);
+  private async setSkin(index: number): Promise<void> {
+    this.switching = true;
+    const { root, animations } = await loadModel(PLAYER_SKINS[index]);
+    applyToonMaterial(root, this.gradientMap);
 
-    const legRMesh = new THREE.Mesh(legGeo, pants);
-    legRMesh.position.y = -0.25;
-    this.legR.position.set(0.11, 0.55, 0);
-    this.legR.add(legRMesh);
+    this.group.remove(this.model);
+    this.model.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh) {
+        mesh.geometry.dispose();
+        (mesh.material as THREE.Material).dispose();
+      }
+    });
 
-    const armLMesh = new THREE.Mesh(armGeo, jacket);
-    armLMesh.position.y = -0.22;
-    this.armL.position.set(-0.28, 0.94, 0);
-    this.armL.add(armLMesh);
-
-    const armRMesh = new THREE.Mesh(armGeo, jacket);
-    armRMesh.position.y = -0.22;
-    this.armR.position.set(0.28, 0.94, 0);
-    this.armR.add(armRMesh);
-
-    this.body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.38, 0.26), jacket);
-    this.body.position.y = 0.78;
-
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 16, 12), skin);
-    head.position.y = 1.16;
-
-    const eyeGeo = new THREE.BoxGeometry(0.05, 0.06, 0.02);
-    const eyeL = new THREE.Mesh(eyeGeo, dark);
-    eyeL.position.set(-0.1, 1.2, 0.24);
-    const eyeR = new THREE.Mesh(eyeGeo, dark);
-    eyeR.position.set(0.1, 1.2, 0.24);
-
-    this.model.add(
-      this.legL,
-      this.legR,
-      this.armL,
-      this.armR,
-      this.body,
-      head,
-      eyeL,
-      eyeR
-    );
+    this.model = root;
+    this.skinIndex = index;
     this.group.add(this.model);
+
+    this.mixer = null;
+    this.idleAction = null;
+    this.walkAction = null;
+    this.runAction = null;
+    if (animations.length > 0) {
+      this.mixer = new THREE.AnimationMixer(this.model);
+      const idle = findClip(animations, 'idle');
+      const walk = findClip(animations, 'walk');
+      const run = findClip(animations, 'run', 'sprint');
+      this.idleAction = idle ? this.mixer.clipAction(idle) : null;
+      this.walkAction = walk ? this.mixer.clipAction(walk) : null;
+      this.runAction = run ? this.mixer.clipAction(run) : null;
+      const defaultAction = this.idleAction ?? this.walkAction ?? this.runAction;
+      [this.idleAction, this.walkAction, this.runAction].forEach((a) => {
+        if (!a) return;
+        a.play();
+        a.weight = a === defaultAction ? 1 : 0;
+      });
+    }
+    this.switching = false;
   }
 
   setPosition(p: THREE.Vector3): void {
@@ -77,31 +85,37 @@ export class Player {
   }
 
   update(dt: number, controller: Controller, forward: THREE.Vector3): void {
+    if (this.input.justPressed('KeyC') && !this.switching) {
+      this.setSkin((this.skinIndex + 1) % PLAYER_SKINS.length);
+    }
+
     const speed = controller.flatSpeed;
     const moving = speed > 0.4;
     const running = speed > 6.5;
 
-    if (moving) {
-      this.phase += (running ? 13 : 9) * dt;
-    }
-
-    const amp = running ? 0.55 : 0.38;
-    const s = Math.sin(this.phase);
-    const c = Math.cos(this.phase);
-
-    if (controller.grounded) {
-      this.legL.rotation.x = s * amp;
-      this.legR.rotation.x = -s * amp;
-      this.armL.rotation.x = -s * amp * 0.9;
-      this.armR.rotation.x = s * amp * 0.9;
-      this.body.position.y = 0.78 + Math.abs(c) * (running ? 0.06 : 0.035);
-      this.model.rotation.x = running ? -0.14 : -0.04;
+    if (this.mixer) {
+      this.mixer.update(dt);
+      const target: THREE.AnimationAction | null = !moving
+        ? this.idleAction
+        : running
+          ? (this.runAction ?? this.walkAction)
+          : (this.walkAction ?? this.idleAction);
+      [this.idleAction, this.walkAction, this.runAction].forEach((a) => {
+        if (!a) return;
+        const weight = a === target ? 1 : 0;
+        a.weight = THREE.MathUtils.lerp(a.weight, weight, 1 - Math.exp(-8 * dt));
+      });
     } else {
-      this.legL.rotation.x = 0.6;
-      this.legR.rotation.x = -0.5;
-      this.armL.rotation.x = -2.5;
-      this.armR.rotation.x = -2.5;
-      this.model.rotation.x = -0.12;
+      if (moving) this.phase += (running ? 13 : 9) * dt;
+      const amp = running ? 0.06 : 0.035;
+      const c = Math.cos(this.phase);
+      if (controller.grounded) {
+        this.model.position.y = Math.abs(c) * amp;
+        this.model.rotation.x = running ? -0.14 : -0.04;
+      } else {
+        this.model.position.y = 0;
+        this.model.rotation.x = -0.12;
+      }
     }
 
     const dir = this._dir;

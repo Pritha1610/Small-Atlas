@@ -27,7 +27,7 @@ export class CameraRig {
     playerPos: THREE.Vector3,
     up: THREE.Vector3,
     input: Input,
-    planet: THREE.Mesh
+    collidables: THREE.Object3D[]
   ): void {
     const wRef = this._wRef
       .copy(this._wRef)
@@ -57,7 +57,7 @@ export class CameraRig {
     this._ray.near = 0;
     this._ray.far = this.dist;
     this._ray.firstHitOnly = true;
-    const hits = this._ray.intersectObject(planet, false);
+    const hits = this._ray.intersectObjects(collidables, false);
     if (hits.length > 0 && hits[0].distance > 0.6) {
       desired.copy(target).addScaledVector(orbit, hits[0].distance - 0.4);
     }

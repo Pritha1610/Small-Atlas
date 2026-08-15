@@ -41,10 +41,19 @@ const pixels = await page.evaluate(() => {
     gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
     return Array.from(px);
   };
+  // Sample a grid, not 3 points: spawn is randomized, so a single dark hillside or the
+  // planet's night side used to false-fail the "did anything render" check.
+  const grid = [];
+  for (let gx = 1; gx <= 5; gx++) {
+    for (let gy = 1; gy <= 5; gy++) {
+      grid.push(sample(Math.round((w * gx) / 6), Math.round((h * gy) / 6)));
+    }
+  }
   return {
     center: sample(w >> 1, h >> 1),
     topLeft: sample(20, h - 20),
     bottomRight: sample(w - 20, 20),
+    grid,
   };
 });
 
@@ -54,8 +63,14 @@ const start = await page.evaluate(() => ({
   z: window.__game.controller.feet.z,
 }));
 
+// Held long enough to survive a software-rendered frame rate: post-processing drops
+// SwiftShader to ~4fps, where 1.2s is only a handful of simulated frames. Also nudges left
+// first, so a spawn facing a cliff does not read as "did not move".
+await page.keyboard.down('KeyA');
+await page.waitForTimeout(600);
+await page.keyboard.up('KeyA');
 await page.keyboard.down('KeyW');
-await page.waitForTimeout(1200);
+await page.waitForTimeout(3000);
 await page.keyboard.up('KeyW');
 
 const end = await page.evaluate(() => ({
@@ -72,12 +87,12 @@ const moved = Math.hypot(
   end.z - start.z
 );
 
-const nonBlack =
-  pixels.center.slice(0, 3).some((v) => v > 8) ||
-  pixels.topLeft.slice(0, 3).some((v) => v > 8) ||
-  pixels.bottomRight.slice(0, 3).some((v) => v > 8);
+const litSamples = pixels.grid.filter((px) => px.slice(0, 3).some((v) => v > 8)).length;
+const nonBlack = litSamples >= 3;
 
-console.log(JSON.stringify({ fps, pixels, start, end, moved, consoleErrors }, null, 2));
+console.log(
+  JSON.stringify({ fps, litSamples, start, end, moved, consoleErrors }, null, 2)
+);
 
 await browser.close();
 

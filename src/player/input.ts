@@ -37,6 +37,10 @@ export class Input {
     return this.pressed.has('Space');
   }
 
+  justPressed(code: string): boolean {
+    return this.pressed.has(code);
+  }
+
   endFrame(): void {
     this.pressed.clear();
   }

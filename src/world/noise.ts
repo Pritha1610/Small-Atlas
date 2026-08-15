@@ -37,6 +37,35 @@ export function valueNoise(x: number, y: number, z: number): number {
   return y0 + (y1 - y0) * w;
 }
 
+// Musgrave-style ridged multifractal. The `prev` feedback is what makes a ridge continue
+// along a crest instead of breaking into isolated bumps, which is what reads as a mountain
+// range rather than lumps.
+export function ridged(
+  x: number,
+  y: number,
+  z: number,
+  octaves: number,
+  freq: number,
+  lacunarity = 2.03,
+  gain = 0.5
+): number {
+  let sum = 0;
+  let amp = 1;
+  let norm = 0;
+  let f = freq;
+  let prev = 1;
+  for (let i = 0; i < octaves; i++) {
+    let n = 1 - Math.abs(2 * valueNoise(x * f, y * f, z * f) - 1);
+    n *= n;
+    sum += n * amp * prev;
+    norm += amp;
+    prev = Math.min(1, n * 1.4);
+    amp *= gain;
+    f *= lacunarity;
+  }
+  return sum / norm;
+}
+
 export function fbm(
   x: number,
   y: number,
