@@ -11,8 +11,8 @@ const GREENS = [
   new THREE.Color('#68b36b'),
 ];
 
-const TREE_COUNT = 320;
-const GRASS_COUNT = 14000;
+const TREE_COUNT = 2400;
+const GRASS_COUNT = 90000;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 export interface Props {
@@ -76,12 +76,46 @@ function grassTuft(): THREE.BufferGeometry {
   return mergeGeometries(blades, false)!;
 }
 
+// Frustum culling is per-object, so one globe-spanning InstancedMesh is always drawn in full.
+// At R=150 the horizon is only ~33 units away and the visible ground is ~1% of the sphere, so
+// splitting the scatter into cells turns that into a cull of nearly everything. One cell is
+// roughly the size of the visible cap; finer than that just adds objects to frustum-test.
+const CHUNKS = 128;
+
+function chunkCells(n: number): THREE.Vector3[] {
+  const cells: THREE.Vector3[] = [];
+  const phi = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < n; i++) {
+    const y = 1 - (i / (n - 1)) * 2;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    cells.push(new THREE.Vector3(Math.cos(phi * i) * r, y, Math.sin(phi * i) * r));
+  }
+  return cells;
+}
+
+function partition(spots: Spot[], cells: THREE.Vector3[]): Spot[][] {
+  const buckets: Spot[][] = cells.map(() => []);
+  for (const s of spots) {
+    let best = 0;
+    let bestDot = -2;
+    for (let i = 0; i < cells.length; i++) {
+      const d = s.up.dot(cells[i]);
+      if (d > bestDot) {
+        bestDot = d;
+        best = i;
+      }
+    }
+    buckets[best].push(s);
+  }
+  return buckets;
+}
+
 export function createProps(gradientMap: THREE.Texture, planetMesh: THREE.Mesh): Props {
   const group = new THREE.Group();
   const sampler = new MeshSurfaceSampler(planetMesh).build();
 
-  const trees = scatter(sampler, TREE_COUNT, WATER_Y + 1.6, 11, 0.86);
-  const grass = scatter(sampler, GRASS_COUNT, WATER_Y + 0.4, 11, 0.8);
+  const trees = scatter(sampler, TREE_COUNT, WATER_Y + 4.8, 33, 0.86);
+  const grass = scatter(sampler, GRASS_COUNT, WATER_Y + 1.2, 33, 0.8);
 
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
@@ -92,33 +126,6 @@ export function createProps(gradientMap: THREE.Texture, planetMesh: THREE.Mesh):
   const foliageMat = new THREE.MeshToonMaterial({ color: '#4f8f4c', gradientMap });
   applyWind(foliageMat, 0.05, 0);
 
-  const trunkMesh = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(0.14, 0.22, 1.0, 6),
-    trunkMat,
-    trees.length
-  );
-  const foliageMesh = new THREE.InstancedMesh(
-    new THREE.IcosahedronGeometry(0.85, 0),
-    foliageMat,
-    trees.length
-  );
-
-  trees.forEach((s, i) => {
-    const sc = 0.75 + Math.random() * 0.9;
-    q.setFromUnitVectors(WORLD_UP, s.up);
-    scale.set(sc, sc, sc);
-    p.copy(s.pos).addScaledVector(s.up, 0.55 * sc);
-    m.compose(p, q, scale);
-    trunkMesh.setMatrixAt(i, m);
-    p.copy(s.pos).addScaledVector(s.up, 1.6 * sc);
-    m.compose(p, q, scale);
-    foliageMesh.setMatrixAt(i, m);
-    foliageMesh.setColorAt(i, GREENS[Math.floor(Math.random() * GREENS.length)]);
-  });
-  trunkMesh.instanceMatrix.needsUpdate = true;
-  foliageMesh.instanceMatrix.needsUpdate = true;
-  if (foliageMesh.instanceColor) foliageMesh.instanceColor.needsUpdate = true;
-
   const grassMat = new THREE.MeshToonMaterial({
     color: '#6fae5c',
     gradientMap,
@@ -126,17 +133,53 @@ export function createProps(gradientMap: THREE.Texture, planetMesh: THREE.Mesh):
   });
   applyWind(grassMat, 0.12, 1);
 
-  const grassMesh = new THREE.InstancedMesh(grassTuft(), grassMat, grass.length);
-  grass.forEach((s, i) => {
-    const sc = 0.55 + Math.random() * 0.5;
-    q.setFromUnitVectors(WORLD_UP, s.up);
-    q.multiply(new THREE.Quaternion().setFromAxisAngle(WORLD_UP, Math.random() * Math.PI * 2));
-    scale.set(sc, sc, sc);
-    m.compose(s.pos, q, scale);
-    grassMesh.setMatrixAt(i, m);
-  });
-  grassMesh.instanceMatrix.needsUpdate = true;
+  const trunkGeo = new THREE.CylinderGeometry(0.14, 0.22, 1.0, 6);
+  const foliageGeo = new THREE.IcosahedronGeometry(0.85, 0);
+  const tuftGeo = grassTuft();
 
-  group.add(trunkMesh, foliageMesh, grassMesh);
+  const cells = chunkCells(CHUNKS);
+
+  partition(trees, cells).forEach((bucket) => {
+    if (bucket.length === 0) return;
+    const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, bucket.length);
+    const foliageMesh = new THREE.InstancedMesh(foliageGeo, foliageMat, bucket.length);
+    bucket.forEach((s, i) => {
+      const sc = 0.75 + Math.random() * 0.9;
+      q.setFromUnitVectors(WORLD_UP, s.up);
+      scale.set(sc, sc, sc);
+      p.copy(s.pos).addScaledVector(s.up, 0.55 * sc);
+      m.compose(p, q, scale);
+      trunkMesh.setMatrixAt(i, m);
+      p.copy(s.pos).addScaledVector(s.up, 1.6 * sc);
+      m.compose(p, q, scale);
+      foliageMesh.setMatrixAt(i, m);
+      foliageMesh.setColorAt(i, GREENS[Math.floor(Math.random() * GREENS.length)]);
+    });
+    trunkMesh.instanceMatrix.needsUpdate = true;
+    foliageMesh.instanceMatrix.needsUpdate = true;
+    if (foliageMesh.instanceColor) foliageMesh.instanceColor.needsUpdate = true;
+    // Without this the bounding sphere covers only the base geometry at the origin and three
+    // culls the whole chunk the moment the origin leaves the frustum.
+    trunkMesh.computeBoundingSphere();
+    foliageMesh.computeBoundingSphere();
+    group.add(trunkMesh, foliageMesh);
+  });
+
+  partition(grass, cells).forEach((bucket) => {
+    if (bucket.length === 0) return;
+    const grassMesh = new THREE.InstancedMesh(tuftGeo, grassMat, bucket.length);
+    bucket.forEach((s, i) => {
+      const sc = 0.55 + Math.random() * 0.5;
+      q.setFromUnitVectors(WORLD_UP, s.up);
+      q.multiply(new THREE.Quaternion().setFromAxisAngle(WORLD_UP, Math.random() * Math.PI * 2));
+      scale.set(sc, sc, sc);
+      m.compose(s.pos, q, scale);
+      grassMesh.setMatrixAt(i, m);
+    });
+    grassMesh.instanceMatrix.needsUpdate = true;
+    grassMesh.computeBoundingSphere();
+    group.add(grassMesh);
+  });
+
   return { group };
 }

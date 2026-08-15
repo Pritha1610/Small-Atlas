@@ -7,6 +7,8 @@ const MAP_SIZE = 148;
 
 export interface Hud {
   update(now: number, feet: THREE.Vector3, forward: THREE.Vector3): void;
+  /** Drives how far the story has unlocked. */
+  readonly wondersFound: number;
 }
 
 export function createHud(sites: WonderSite[]): Hud {
@@ -15,7 +17,7 @@ export function createHud(sites: WonderSite[]): Hud {
     <div class="title">wonders <span>of the world</span></div>
     <div class="controls">
       <b>WASD</b> move &nbsp;&middot;&nbsp; <b>Shift</b> run &nbsp;&middot;&nbsp;
-      <b>Space</b> jump &nbsp;&middot;&nbsp; <b>C</b> skin &nbsp;&middot;&nbsp; <b>drag</b> look
+      <b>Space</b> jump &nbsp;&middot;&nbsp; <b>E</b> talk &nbsp;&middot;&nbsp; <b>drag</b> look
     </div>
     <div class="fps">-- fps</div>
     <div class="map">
@@ -92,7 +94,12 @@ export function createHud(sites: WonderSite[]): Hud {
     ctx.fill();
   }
 
+  let found = 0;
+
   return {
+    get wondersFound() {
+      return found;
+    },
     update(now: number, feet: THREE.Vector3, forward: THREE.Vector3) {
       frames++;
       if (now - last >= 500) {
@@ -106,6 +113,7 @@ export function createHud(sites: WonderSite[]): Hud {
           if (!visited[i] && feet.distanceTo(sites[i].position) < VISIT_RADIUS) visited[i] = true;
           if (visited[i]) count++;
         }
+        found = count;
         foundEl.textContent = `${count} / ${sites.length} found`;
       }
       draw(feet, forward);

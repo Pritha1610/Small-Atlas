@@ -16,7 +16,16 @@ const MAX_FALL = 35;
 // Comfortably outside the tallest terrain (max radius ~67), for the fell-through-the-world probe.
 const PROBE_HEIGHT = 95;
 const STEP = 0.55;
-const COS_SLOPE_MAX = 0.5;
+// How high you can haul yourself while wading. The water clamp pins you to the waterline, so
+// with the normal step height a beach only had to rise 0.65 above sea level before the
+// controller called you airborne, dropped you, and re-clamped you - which is why coming ashore
+// meant spamming jump. Buoyancy justifies a bigger step, and it only applies in water so it
+// cannot be used to climb dry cliffs.
+const WADE_STEP = 2.2;
+// Steepest ground you can walk up, as normal-dot-up. 0.5 (60 degrees) refused most mountain
+// flanks - measured p90 of high ground is 67 degrees - so summits were unreachable on foot.
+// 0.36 (~69 degrees) lets you trek a mountainside while still stopping you at true cliffs.
+const COS_SLOPE_MAX = 0.36;
 
 export class Controller {
   feet = new THREE.Vector3();
@@ -100,7 +109,6 @@ export class Controller {
     }
 
     this.vel.copy(flat).addScaledVector(up, nextVUp);
-    const before = this._origin.copy(this.feet);
     this.feet.addScaledVector(this.vel, dt);
 
     const downDir = this._down.copy(up).negate();
@@ -111,20 +119,31 @@ export class Controller {
     this._ray.firstHitOnly = true;
     const down = this._ray.intersectObjects(collidables, false);
 
+    const wading = this.feet.length() <= waterRadius + 0.1;
+    const stepUp = wading ? WADE_STEP : STEP;
+
     if (down.length > 0) {
       const dist = down[0].distance - DOWN_PROBE_OFFSET;
       const lift = dist - CLEARANCE;
     if (this.grounded) {
-      if (lift > STEP) {
-        if (this.flatVel.lengthSq() > 0.01) {
-          this.feet.copy(before);
-          this.vel.set(0, 0, 0);
-        } else {
-          this.grounded = false;
-        }
+      if (wading) {
+        // Floating. The seabed is often metres down, and the ledge check below reads that as
+        // "you are about to walk off a cliff", rolls the move back and zeroes the velocity -
+        // which froze the player solid the moment the seabed rose within reach of the probe,
+        // i.e. exactly in the shallows where you wade ashore. The water clamp already holds
+        // the body at the surface, so the only thing worth reacting to here is ground that has
+        // risen ABOVE the waterline: the beach.
+        if (lift < -0.001) this.feet.addScaledVector(up, -lift);
+      } else if (lift > STEP) {
+        // Stepped off a ledge, so fall off it. This used to roll the move back and zero the
+        // velocity, which on rough ground - where drops over 0.65 are everywhere - froze the
+        // player solid instead: a traced climb spent 97% of its frames stuck on one spot.
+        // Gravity, terminal velocity and the fell-through-the-world probe already make falling
+        // safe, so there is nothing here worth refusing to move for.
+        this.grounded = false;
       } else if (lift > 0.001) {
           this.feet.addScaledVector(up, -lift);
-        } else if (lift < -STEP) {
+        } else if (lift < -stepUp) {
           this.grounded = false;
         } else if (lift < -0.001) {
           this.feet.addScaledVector(up, -lift);
@@ -150,6 +169,21 @@ export class Controller {
       const outside = this._ray.intersectObjects(collidables, false);
       if (outside.length > 0 && this.feet.length() < outside[0].point.length() - 0.01) {
         this.feet.copy(outside[0].point).addScaledVector(up, CLEARANCE);
+        const vU = this.vel.dot(up);
+        if (vU < 0) this.vel.addScaledVector(up, -vU);
+        this.grounded = true;
+      }
+    }
+
+    // Invariant: never finish a step inside the ground. Several branches above can leave the
+    // feet buried - stepping off a ledge onto a rising slope, a fast landing, a steep wall - and
+    // once buried the downward probe sees only back faces and the player sinks out of the world.
+    // Enforcing it in one place beats patching each path, and it costs nothing: the probe result
+    // is already in hand.
+    if (down.length > 0) {
+      const buried = down[0].distance - DOWN_PROBE_OFFSET - CLEARANCE;
+      if (buried < -0.02) {
+        this.feet.addScaledVector(up, -buried);
         const vU = this.vel.dot(up);
         if (vU < 0) this.vel.addScaledVector(up, -vU);
         this.grounded = true;

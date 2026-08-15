@@ -2,10 +2,17 @@ import * as THREE from 'three';
 
 /**
  * Seconds for one full round trip: early morning -> midday -> late afternoon -> back again.
- * The one dial. Below ~180s the flat-shaded facets visibly pop as a toon band boundary sweeps
- * across them.
+ * The one dial. Raise it to slow the sun down, lower it to speed it up; below ~180s the
+ * flat-shaded facets visibly pop as a toon band boundary sweeps across them.
  */
-export const DAY_SECONDS = 300;
+export const DAY_SECONDS = 3600;
+
+/**
+ * Pins the sun at one point in the arc instead of cycling. 0 and 1 are the low-sun extremes,
+ * 0.5 is midday; 0.38 is a high, slightly off-axis sun that lights the terrain without
+ * flattening it straight from overhead. Set to null to run the day cycle again.
+ */
+const PINNED_PHASE: number | null = 0.38;
 
 // Elevation is measured off the world XZ plane and stays strictly positive at both ends, so
 // the sun is never below the world horizon.
@@ -72,7 +79,7 @@ export function updateDaylight(
   // velocity: the sun eases to a stop at dawn and reverses. A triangle wave would keep the
   // value continuous but flip the derivative, and the sun would visibly bounce.
   const p = (elapsed / DAY_SECONDS + 0.12) % 1;
-  const s = 0.5 - 0.5 * Math.cos(p * Math.PI * 2);
+  const s = PINNED_PHASE ?? 0.5 - 0.5 * Math.cos(p * Math.PI * 2);
 
   // Normalised elevation: 0 at both extremes, 1 at midday. Everything visual keys to this
   // rather than to phase, so morning and afternoon match from a single keyframe pair.

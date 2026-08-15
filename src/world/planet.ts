@@ -2,29 +2,39 @@ import * as THREE from 'three';
 import { fbm, ridged } from './noise';
 import { makeOutline } from '../render/toon';
 
-export const PLANET_RADIUS = 50;
-export const WATER_Y = 1.2;
+export const PLANET_RADIUS = 150;
+export const WATER_Y = 3.6;
 
-// The noise is sampled on the unit direction vector, so one noise cell spans 50/freq world
-// units and fbm's mean is well below 0.5 at low frequencies. Every constant below was tuned
-// against measured statistics rather than picked by eye.
+// The noise is sampled on the unit direction vector, so one noise cell spans PLANET_RADIUS/freq
+// world units and fbm's mean is well below 0.5 at low frequencies. Every constant below was
+// tuned against measured statistics rather than picked by eye. All heights are in world units
+// and scale with PLANET_RADIUS; the frequencies are angular and deliberately do not.
 const CONT_FREQ = 1.4;
-const SEA_T = 0.4752; // calibrated for ~35% land
-const SHELF = 0.065;
-const SHELF_SEA = 0.05;
-const PLAIN_H = 5; // coastal plain must clear wonders.ts WATER_CLEARANCE or nothing places
-const INLAND_SLOPE = 20;
-const OCEAN_D = 5.5;
-const MTN_FREQ = 1.2;
-const MTN_AMP = 20;
-const MTN_POW = 1.6; // pushes ground between ridges down, which is what makes real valleys
+// Recalibrated after the coastal shelf was widened: a lower, wider shelf puts more of the
+// land field under the waterline, which cost ~15% of the dry surface. Dropping the sea
+// threshold grows the continents back without touching the (now gentle) shore profile.
+const SEA_T = 0.435;
+const SHELF = 0.18;
+const SHELF_SEA = 0.22;
+// A wide, low coastal shelf is what makes a beach you can walk up. The old 0.065/15 pair put
+// the whole 15-unit rise into ~18 horizontal units, i.e. a 40-degree ramp before noise, and a
+// measured 30% of the coastline came out past the controller's 60-degree climb limit. The sea
+// side was worse: 16.5 units of drop over ~13, so the water was chest-deep a few steps out.
+const PLAIN_H = 8;
+const INLAND_SLOPE = 52;
+const OCEAN_D = 14;
+// Lower frequency = wider mountains. Height and width are raised together on purpose: a taller
+// peak at the same width is just a steeper wall, and the brief is "high but trekkable".
+const MTN_FREQ = 0.74;
+const MTN_AMP = 82;
+const MTN_POW = 1.25; // 1.6 carved knife-edge ridges; this keeps relief but climbable flanks
 const MTN_MASK_FREQ = 1.3;
 const HILL_FREQ = 2.3;
-const HILL_AMP = 2.4;
+const HILL_AMP = 7.2;
 const PLAT_MASK_FREQ = 1.6;
-const PLAT_STEP = 3;
+const PLAT_STEP = 6;
 const VAL_FREQ = 2.55;
-const VAL_DEPTH = 3;
+const VAL_DEPTH = 9;
 // Offsets decorrelate the masks; added before the frequency multiply so they shift many cells.
 const O1 = 17.3;
 const O2 = -31.7;
@@ -64,7 +74,7 @@ export function sampleHeight(dir: THREE.Vector3): number {
   const mm = belt * land;
   let h = base;
   if (mm > 0.001) {
-    h += Math.pow(ridged(x, y, z, 4, MTN_FREQ, 2.03), MTN_POW) * mm * MTN_AMP;
+    h += Math.pow(ridged(x, y, z, 3, MTN_FREQ, 2.03), MTN_POW) * mm * MTN_AMP;
   }
 
   h += (fbm(x, y, z, 3, HILL_FREQ) - 0.5) * HILL_AMP * (0.2 + 0.8 * land);
@@ -74,13 +84,13 @@ export function sampleHeight(dir: THREE.Vector3): number {
   const pm =
     sstep(fbm(x + O2, y + O2, z + O2, 2, PLAT_MASK_FREQ), 0.42, 0.54) * land * (1 - 0.65 * belt);
   if (pm > 0.001) {
-    h += (terraceStep(h, PLAT_STEP, 0.38, 0.62) - h) * pm;
+    h += (terraceStep(h, PLAT_STEP, 0.28, 0.72) - h) * pm;
   }
 
   // Valleys: the crest of a low-octave ridged field is a naturally connected dendritic
   // network, so subtracting it carves channels that run between peaks down to the sea.
   if (land > 0.001) {
-    h -= sstep(ridged(x + O3, y + O3, z + O3, 2, VAL_FREQ), 0.72, 1) * VAL_DEPTH * land;
+    h -= sstep(ridged(x + O3, y + O3, z + O3, 2, VAL_FREQ), 0.72, 1) * VAL_DEPTH * land * land;
   }
 
   return h;
@@ -99,12 +109,12 @@ const ROCK = new THREE.Color('#a09a8c');
 const PEAK = new THREE.Color('#e8e6de');
 
 const ANCHORS: Array<[number, THREE.Color]> = [
-  [WATER_Y - 0.6, SEA_FLOOR],
-  [WATER_Y + 0.3, SAND],
-  [3.4, GRASS],
-  [6.0, FOREST],
-  [8.7, ROCK],
-  [14.1, PEAK],
+  [WATER_Y - 1.8, SEA_FLOOR],
+  [WATER_Y + 0.9, SAND],
+  [10.2, GRASS],
+  [18.0, FOREST],
+  [26.1, ROCK],
+  [42.3, PEAK],
 ];
 
 function terrainColor(h: number, out: THREE.Color): void {
@@ -125,9 +135,10 @@ function terrainColor(h: number, out: THREE.Color): void {
 }
 
 export function createPlanet(gradientMap: THREE.Texture): Planet {
-  // detail 39 gives a ~1.5-unit edge, about one player height, which is the coarsest mesh
-  // that can actually express a valley or a terrace riser.
-  const geo = new THREE.IcosahedronGeometry(PLANET_RADIUS, 39);
+  // detail 72 gives a ~2.5-unit edge at R=150. Terrain constants are all scaled with the
+  // radius and the noise frequencies are not, so the landforms are the same shapes three times
+  // larger: rise and run scale together, which keeps every slope (and so walkability) intact.
+  const geo = new THREE.IcosahedronGeometry(PLANET_RADIUS, 72);
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const count = pos.count;
 

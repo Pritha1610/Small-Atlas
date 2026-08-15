@@ -20,9 +20,9 @@ const WONDERS: WonderSpec[] = [
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const MIN_SPAWN_ANGLE = 0.6;
-const MIN_HEIGHT = 5;
-const MAX_HEIGHT = 10;
-const MAX_FOOTPRINT = 18;
+const MIN_HEIGHT = 12;
+const MAX_HEIGHT = 26;
+const MAX_FOOTPRINT = 46;
 
 // The .glb exports are Blender dioramas: each ships a 300-420 unit ground plate plus its
 // own scatter trees. The planet already has terrain and props, so keep only the monument.
@@ -60,9 +60,9 @@ function fibonacciSpherePoint(i: number, n: number): THREE.Vector3 {
   return new THREE.Vector3(Math.cos(theta) * r, y, Math.sin(theta) * r).normalize();
 }
 
-const WATER_CLEARANCE = WATER_Y + 4;
+const WATER_CLEARANCE = WATER_Y + 5;
 const FOOTPRINT_CHECK_ANGLE = MAX_FOOTPRINT / 2 / PLANET_RADIUS;
-const MAX_SITE_RELIEF = 3;
+const MAX_SITE_RELIEF = 9;
 
 // How bad a site is; lower is better. Terrain relief across the footprint, since noise
 // (amplitude 9) dwarfs sphere curvature at these footprints, plus heavy penalties for being

@@ -64,28 +64,37 @@ const start = await page.evaluate(() => ({
 }));
 
 // Held long enough to survive a software-rendered frame rate: post-processing drops
-// SwiftShader to ~4fps, where 1.2s is only a handful of simulated frames. Also nudges left
-// first, so a spawn facing a cliff does not read as "did not move".
-await page.keyboard.down('KeyA');
-await page.waitForTimeout(600);
-await page.keyboard.up('KeyA');
-await page.keyboard.down('KeyW');
-await page.waitForTimeout(3000);
-await page.keyboard.up('KeyW');
+// SwiftShader to ~4fps, where 1.2s is only a handful of simulated frames.
+//
+// This tracks the FURTHEST the player gets from spawn rather than the net start-to-end
+// distance, and tries other directions if the first is blocked. Spawn point and facing are
+// both random, and roughly 3% of spawns face a cliff or a steep slope the controller
+// correctly refuses to climb - measuring one direction's endpoint failed on those even
+// though movement was working perfectly.
+const readPos = () =>
+  page.evaluate(() => ({
+    x: window.__game.controller.feet.x,
+    y: window.__game.controller.feet.y,
+    z: window.__game.controller.feet.z,
+  }));
 
-const end = await page.evaluate(() => ({
-  x: window.__game.controller.feet.x,
-  y: window.__game.controller.feet.y,
-  z: window.__game.controller.feet.z,
-}));
+let moved = 0;
+async function walk(key, ms) {
+  await page.keyboard.down(key);
+  for (let waited = 0; waited < ms; waited += 250) {
+    await page.waitForTimeout(250);
+    const c = await readPos();
+    moved = Math.max(moved, Math.hypot(c.x - start.x, c.y - start.y, c.z - start.z));
+  }
+  await page.keyboard.up(key);
+}
 
+await walk('KeyW', 3000);
+if (moved < 0.5) await walk('KeyS', 2000);
+if (moved < 0.5) await walk('KeyD', 2000);
+
+const end = await readPos();
 await page.screenshot({ path: '/tmp/wonders-smoke.png' });
-
-const moved = Math.hypot(
-  end.x - start.x,
-  end.y - start.y,
-  end.z - start.z
-);
 
 const litSamples = pixels.grid.filter((px) => px.slice(0, 3).some((v) => v > 8)).length;
 const nonBlack = litSamples >= 3;

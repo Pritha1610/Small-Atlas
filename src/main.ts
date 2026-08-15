@@ -9,11 +9,12 @@ import {
   findLandStart,
   sampleHeight,
 } from './world/planet';
-import { createWater } from './world/water';
+import { createWater, waveHeight } from './world/water';
 import { createProps } from './world/props';
 import { windTime } from './render/wind';
 import { updateDaylight } from './render/daylight';
 import { createWonders } from './world/wonders';
+import { createSettlements } from './world/settlements';
 import { createBoat } from './world/boat';
 import { createSky } from './render/sky';
 import { createToonGradient } from './render/toon';
@@ -23,6 +24,8 @@ import { Controller } from './player/controller';
 import { Player } from './player/player';
 import { CameraRig } from './player/camera';
 import { createHud } from './ui';
+import { Dialogue } from './story/dialogue';
+import { createStory } from './story/interaction';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
@@ -55,16 +58,16 @@ app.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const sky = createSky();
 scene.add(sky.mesh);
-// Nothing on a planet this small is ever more than ~68 units from the eye, so the old
-// 70-280 range never touched a terrain pixel. This actually hazes the far mountains.
-const fog = new THREE.Fog(sky.horizonColor, 25, 70);
+// Sightline geometry: the ground horizon is ~33 units at R=150, but a 60-unit peak stays
+// visible from ~130, so fog has to reach past the horizon to haze distant mountains.
+const fog = new THREE.Fog(sky.horizonColor, 45, 170);
 scene.fog = fog;
 
 const camera = new THREE.PerspectiveCamera(
   55,
   window.innerWidth / window.innerHeight,
   0.1,
-  600
+  1600
 );
 
 // Two passes, the second writing straight to the screen. HDR target so the glow has headroom
@@ -123,11 +126,11 @@ const spawnDir = start.clone().normalize();
 // which moves the ground out from under the analytic height used to pick the spot.
 function snapToGround(): void {
   const probe = new THREE.Raycaster(
-    spawnDir.clone().multiplyScalar(PLANET_RADIUS + 30),
+    spawnDir.clone().multiplyScalar(PLANET_RADIUS + 90),
     spawnDir.clone().negate()
   );
   probe.near = 0;
-  probe.far = 45;
+  probe.far = 135;
   probe.firstHitOnly = true;
   const hit = probe.intersectObject(planet.mesh, false);
   if (hit.length > 0) start.copy(hit[0].point);
@@ -154,7 +157,16 @@ async function boot(): Promise<void> {
   // After terracing, so props sit on the ground as it finally is rather than where it was.
   scene.add(createProps(gradientMap, planet.mesh).group);
 
-  const collidables = [planet.mesh, wonders.collisionMesh];
+  const settlements = await createSettlements(
+    gradientMap,
+    planet.mesh,
+    wonders.sites.map((s) => s.position.clone().normalize())
+  );
+  scene.add(settlements.group);
+
+  const dialogue = new Dialogue();
+  await dialogue.load('./story/corpus.json');
+  const collidables = [planet.mesh, wonders.collisionMesh, settlements.collisionMesh];
 
   const controller = new Controller(start);
   player.setPosition(start);
@@ -165,6 +177,8 @@ async function boot(): Promise<void> {
 
   const rig = new CameraRig(camera);
   const hud = createHud(wonders.sites);
+  // After createHud: it assigns hud.innerHTML, which would wipe the story's own elements.
+  const story = createStory(dialogue, settlements.speakers, settlements.landmarks);
 
   const up = new THREE.Vector3();
   const deck = new THREE.Vector3();
@@ -197,14 +211,20 @@ async function boot(): Promise<void> {
     const afloat = controller.feet.length() <= waterRadius + 0.06;
     boat.visible = afloat;
     if (afloat) {
-      boat.position.copy(controller.feet);
+      // The controller clamps to a fixed water radius, so the boat has to be lifted onto the
+      // displaced surface itself or it sits half-buried in every trough.
+      const lift = waveHeight(controller.feet, windTime.value);
+      boat.position.copy(controller.feet).addScaledVector(up, lift);
       boat.quaternion.copy(player.group.quaternion);
-      player.setPosition(deck.copy(controller.feet).addScaledVector(up, DECK_HEIGHT));
+      player.setPosition(deck.copy(boat.position).addScaledVector(up, DECK_HEIGHT));
     } else {
       player.setPosition(controller.feet);
     }
     player.update(dt, controller, rig.moveForward);
     updateBlobShadow(shadow, controller.feet, controller.grounded, up);
+    settlements.update(controller.feet, dt);
+    story.update(dt, controller.feet, hud.wondersFound);
+    if (input.justPressed('KeyE')) story.interact();
 
     hud.update(now, controller.feet, rig.moveForward);
     composer.render(dt);
