@@ -17,7 +17,7 @@ export function createHud(sites: WonderSite[]): Hud {
     <div class="title">wonders <span>of the world</span></div>
     <div class="controls">
       <b>WASD</b> move &nbsp;&middot;&nbsp; <b>Shift</b> run &nbsp;&middot;&nbsp;
-      <b>Space</b> jump &nbsp;&middot;&nbsp; <b>E</b> talk &nbsp;&middot;&nbsp; <b>drag</b> look
+      <b>Space</b> jump &nbsp;&middot;&nbsp; <b>E</b> talk &nbsp;&middot;&nbsp; <b>C</b> swap &middot; <b>F</b> camera &middot; <b>G</b> album &middot; <b>M</b> sound
     </div>
     <div class="fps">-- fps</div>
     <div class="map">
@@ -102,6 +102,15 @@ export function createHud(sites: WonderSite[]): Hud {
     },
     update(now: number, feet: THREE.Vector3, forward: THREE.Vector3) {
       frames++;
+      // A gap this long means the loop was not drawing at all - the album was open, or the tab
+      // was backgrounded. Counting those frames against wall-clock time reports a stall that
+      // never happened: closing the album read 18fps purely because `last` was still sitting
+      // where it was four seconds earlier. Restart the window instead of publishing a lie.
+      if (now - last > 1500) {
+        frames = 0;
+        last = now;
+        return;
+      }
       if (now - last >= 500) {
         fpsEl.textContent = `${Math.round((frames * 1000) / (now - last))} fps`;
         frames = 0;

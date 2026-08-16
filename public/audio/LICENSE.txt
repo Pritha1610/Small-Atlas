@@ -1,0 +1,49 @@
+Two beds, because this world has two halves.
+
+--- settled: heard among people ---
+
+Chopin Nocturnes, solo piano. PUBLIC DOMAIN recordings from Wikimedia Commons - the
+compositions are long out of copyright and these particular performances are released into
+the public domain as well, which is the part that actually matters.
+
+  settled-nocturne-19.mp3  Nocturne No. 19 in E minor, Op. 72 No. 1  - performed by Luke Faulkner
+  settled-nocturne-16.mp3  Nocturne No. 16 in E flat, Op. 55 No. 2   - performed by Xuan He
+
+  https://commons.wikimedia.org/wiki/Category:Nocturnes_(Chopin)
+
+--- open: heard alone, at sea, or high up ---
+
+From "100 Ambient Atmospheric Soundtracks: Straylight Drones Collection" by John Bartmann.
+CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/) - public domain
+dedication, no attribution required. Credited here anyway.
+
+  open-lurking-deep.mp3    "Lurking Deep"
+  open-mirrors.mp3         "Mirrors of Faolan"
+
+  https://freemusicarchive.org/music/John_Bartmann/100-ambient-atmospheric-soundtracks-straylight-drones-collection
+
+These two were not picked by title. All 101 tracks in that collection were screened by
+measuring short-window RMS: steadiness (coefficient of variation) and the number of hard
+energy onsets per minute. A bed wants both low. These scored cv 0.17 / 1 onset and cv 0.19 /
+2 onsets, against 0.31-0.99 and up to 37 onsets for the rest of the shortlist. The previous
+lofi set measured cv 0.38 with 17 onsets per 90s - that was the beat, and the beat was the
+problem.
+
+--- encoding ---
+
+Piano at 64kbps mono 44.1kHz; drones at 40kbps mono 22.05kHz, because a drone has nothing
+above 11kHz to lose and MPEG-1 at 44.1k silently rounds 40k up to 67k. Both loudness-matched
+to -20 LUFS with ffmpeg loudnorm, so the crossfade between beds does not step in level.
+
+-vn matters: the source files carry an attached 3832x3832 PNG cover image, and without it
+ffmpeg copies that album art into every output - roughly 0.7MB per file of a picture nobody
+can ever see. That alone was a third of the set's size.
+
+18 minutes of music in 6.8MB.
+
+--- everything else you can hear ---
+
+There are no other audio files, and that is deliberate. The sea, the surf, the wind and the
+muffle inside a cave are synthesised at runtime from filtered brown noise in src/audio.ts.
+The game already knows the height of the swell passing under the player, how far above the
+waterline they are, and how fast they are moving. A recording cannot respond to any of that.

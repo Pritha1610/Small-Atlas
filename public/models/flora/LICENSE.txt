@@ -8,3 +8,10 @@ Tree_Tall   <- poly.pizza/m/9nvGuZlbpE
 Tree_Slim   <- poly.pizza/m/i4QMw4L64D
 Bush        <- poly.pizza/m/92EytlU1El
 Bush_Berry  <- poly.pizza/m/TSbIxkDtxF
+
+--- also from the same source ---
+public/models/Woman.glb  "Animated Woman" by Quaternius (https://quaternius.com)
+CC0 1.0 Universal (public domain), via https://poly.pizza/m/nIItLV9nxS
+Chosen because it is untextured, 6.1k triangles, and ships its own 24 animation
+clips (Idle / Walk / Run among them), so it needs neither texture memory nor the
+project's own rig.

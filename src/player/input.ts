@@ -2,14 +2,16 @@ export class Input {
   private keys = new Set<string>();
   private pressed = new Set<string>();
   yawDelta = 0;
+  pitchDelta = 0;
   private lastX = 0;
+  private lastY = 0;
   private dragging = false;
 
   constructor(el: HTMLElement) {
     window.addEventListener('keydown', (e) => {
       if (!this.keys.has(e.code)) this.pressed.add(e.code);
       this.keys.add(e.code);
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+      if (['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         e.preventDefault();
       }
     });
@@ -18,11 +20,15 @@ export class Input {
     el.addEventListener('pointerdown', (e) => {
       this.dragging = true;
       this.lastX = e.clientX;
+      this.lastY = e.clientY;
     });
     window.addEventListener('pointermove', (e) => {
       if (!this.dragging) return;
       this.yawDelta += (e.clientX - this.lastX) * 0.004;
+      // Dragging DOWN raises the camera to look up, the way every mouse-look does it.
+      this.pitchDelta += (e.clientY - this.lastY) * 0.004;
       this.lastX = e.clientX;
+      this.lastY = e.clientY;
     });
     window.addEventListener('pointerup', () => (this.dragging = false));
     window.addEventListener('pointercancel', () => (this.dragging = false));

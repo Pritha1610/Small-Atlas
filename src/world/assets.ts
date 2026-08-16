@@ -105,6 +105,9 @@ export function applyToonMaterial(root: THREE.Object3D, gradientMap: THREE.Textu
       map: src.map ?? null,
       color: src.color ? src.color.clone() : undefined,
       vertexColors: mesh.geometry.hasAttribute('color'),
+      // Carried across so callers can still find a material by name afterwards - retinting a
+      // skin's flat colours needs it, and without it the lookup silently matches nothing.
+      name: src.name,
     });
     // Not src.dispose(): clones share materials with the cached original, so disposing here
     // frees a material the cache still hands out to every later clone of this path.

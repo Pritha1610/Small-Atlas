@@ -1,11 +1,38 @@
 import * as THREE from 'three';
 import { Input } from './input';
 
-const GRAVITY = 20;
-const JUMP = 8.4;
-const WALK = 5.4;
-const RUN = 9.4;
-const DAMP = 9;
+// --- weight -----------------------------------------------------------------------------
+// A body has mass, so it takes time to get moving and time to stop. The old model damped
+// velocity exponentially with a 0.11s time constant and accelerated to match, which meant full
+// speed in about a third of a second and a dead stop almost instantly - the definition of
+// weightless. These are explicit accelerate/brake times instead, so momentum is something you
+// feel and have to plan around.
+/** Seconds to reach top speed from a standstill. */
+const ACCEL_TIME = 0.45;
+/** Seconds to come to rest from top speed. Shorter than accelerating: boots do grip. */
+const BRAKE_TIME = 0.32;
+/** Steering authority in the air, as a fraction of the ground's. You cannot push off nothing. */
+const AIR_CONTROL = 0.2;
+/** Braking authority in the air. Almost none: what you launched with is what you carry. */
+const AIR_BRAKE = 0.12;
+
+// Heavier gravity with a matched jump: same sense of effort, far less hang time. At 20/8.4 the
+// jump peaked at 1.76 units (taller than the character) and hung for 0.84s, which reads as low
+// gravity. 34/9.8 peaks at 1.41 with 0.58s of air, so a jump is a hop and a fall has teeth.
+const GRAVITY = 34;
+const JUMP = 9.8;
+/**
+ * An unhurried walk, in the manner of the game this one is modelled on. 5.4 crossed the whole
+ * 471-unit circumference in 87 seconds, which made a planet feel like a courtyard; it also read
+ * as a jog rather than a walk on a 1.65-unit character. Sprint is kept, but as an option rather
+ * than the speed you travel at by default.
+ */
+export const WALK = 3.8;
+export const RUN = 6.8;
+/** Downward speed above which a landing knocks the wind out of your stride. */
+const LAND_HARD = 15;
+/** Fraction of horizontal speed kept through a hard landing. */
+const LAND_KEEP = 0.45;
 const CLEARANCE = 0.1;
 // The down-probe starts this far above the feet so it can still see the ground after a fast
 // landing has already carried the feet below the surface; from underneath, the terrain's
@@ -46,6 +73,8 @@ export class Controller {
   private _normal = new THREE.Vector3();
   private _down = new THREE.Vector3();
   private _downOrigin = new THREE.Vector3();
+  private _target = new THREE.Vector3();
+  private _delta = new THREE.Vector3();
   private _ray = new THREE.Raycaster();
 
   constructor(start: THREE.Vector3) {
@@ -62,7 +91,6 @@ export class Controller {
     const up = this._up.copy(this.feet).normalize();
     const vUp = this.vel.dot(up);
     const flat = this._flat.copy(this.vel).addScaledVector(up, -vUp);
-    flat.multiplyScalar(Math.exp(-DAMP * dt));
 
     // forward x up is +X for a -Z forward; the other order points left, which inverted A/D.
     const right = this._right.crossVectors(moveForward, up);
@@ -78,13 +106,24 @@ export class Controller {
 
     const maxSpeed =
       input.isDown('ShiftLeft') || input.isDown('ShiftRight') ? RUN : WALK;
-    // Accelerate in proportion to the target speed. With a fixed ACCEL the damping equilibrium
-    // (ACCEL/DAMP = 3.1) sat below WALK, so the max-speed clamp never engaged and Shift did
-    // nothing. Scaling by maxSpeed makes the equilibrium the target speed itself.
+
+    // Move the velocity TOWARD the target at a fixed rate rather than scaling it. Steering falls
+    // out of this for free: turning is a large delta, so a hard change of direction costs speed
+    // the same way it would if you had to plant a foot and push.
     if (dir.lengthSq() > 0) {
-      flat.addScaledVector(dir, maxSpeed * DAMP * dt);
-      if (flat.length() > maxSpeed) flat.setLength(maxSpeed);
+      const target = this._target.copy(dir).multiplyScalar(maxSpeed);
+      const rate = (maxSpeed / ACCEL_TIME) * (this.grounded ? 1 : AIR_CONTROL);
+      const delta = this._delta.subVectors(target, flat);
+      const step = rate * dt;
+      if (delta.lengthSq() <= step * step) flat.copy(target);
+      else flat.addScaledVector(delta.normalize(), step);
+    } else {
+      const rate = (maxSpeed / BRAKE_TIME) * (this.grounded ? 1 : AIR_BRAKE);
+      const step = rate * dt;
+      if (flat.lengthSq() <= step * step) flat.set(0, 0, 0);
+      else flat.addScaledVector(this._delta.copy(flat).normalize(), -step);
     }
+    if (flat.length() > maxSpeed) flat.setLength(maxSpeed);
 
     let nextVUp = Math.max(vUp - GRAVITY * dt, -MAX_FALL);
     if (input.jumpPressed() && this.grounded) {
@@ -113,6 +152,8 @@ export class Controller {
     }
 
     this.vel.copy(flat).addScaledVector(up, nextVUp);
+    // How hard we are coming down, captured before the ground checks below can zero it.
+    const impact = this.grounded ? 0 : Math.max(0, -nextVUp);
     this.feet.addScaledVector(this.vel, dt);
 
     const downDir = this._down.copy(up).negate();
@@ -158,6 +199,15 @@ export class Controller {
           this.feet.addScaledVector(up, -lift);
           this.vel.addScaledVector(up, -vU);
           this.grounded = true;
+          // Landing hard costs you your stride. Without this you can drop off a cliff and keep
+          // sprinting the instant your feet touch, which is the single most weightless thing a
+          // character can do.
+          if (impact > LAND_HARD) {
+            const keep = this.vel.dot(up);
+            this.vel.addScaledVector(up, -keep);
+            this.vel.multiplyScalar(LAND_KEEP);
+            this.vel.addScaledVector(up, keep);
+          }
         }
       }
     } else {

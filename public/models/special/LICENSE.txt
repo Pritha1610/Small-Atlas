@@ -1,0 +1,18 @@
+Three rare characters, placed one each at the extremes of the world.
+
+Walker.glb      "Animated Woman" by Quaternius  - CC0 1.0 (public domain), no attribution
+                required.  https://poly.pizza/m/qJ2gsTUBHL
+Drifter.glb     "Punk" by Quaternius            - CC0 1.0 (public domain), no attribution
+                required.  https://poly.pizza/m/djXoqejw6w
+SaltReader.glb  "Witch" by Quaternius           - CC BY: ATTRIBUTION REQUIRED. Credited in
+                the project README.  https://poly.pizza/m/QBEOV9ZUT8
+
+All three share the identical 62-bone rig and 24-clip animation set as Woman.glb (the player
+skin), so they need no retargeting.
+
+--- player characters (public/models/) ---
+Woman.glb  "Animated Woman" by Quaternius - CC0 1.0, no attribution required.
+           https://poly.pizza/m/nIItLV9nxS
+Man.glb    "Adventurer" by Quaternius      - CC0 1.0, no attribution required.
+           https://poly.pizza/m/ZwF0K7WBmu
+Both untextured, both on the same 62-bone rig with the same 24 clips.

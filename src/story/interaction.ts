@@ -9,8 +9,20 @@ const EXAMINE_RANGE = 13;
 /** An overheard murmur needs you closer than the prompt, so passers-by feel incidental. */
 const AMBIENT_RANGE = 10;
 const AMBIENT_EVERY = 6.5;
-const AMBIENT_HOLD = 4.5;
-const PANEL_HOLD = 9;
+/**
+ * How long a line stays up, scaled to how long it takes to read.
+ *
+ * These were fixed at 4.5s and 9s, which fitted an ambient layer whose median line was eight
+ * words. The rewrite doubled that - a bark now names its own referent instead of assuming it -
+ * and a fixed hold cuts the back half off the longer ones. Roughly three words a second, plus a
+ * beat to notice it has appeared, bounded so a short line does not linger and a long one does
+ * not outstay its speaker.
+ */
+function holdFor(text: string, max: number): number {
+  return Math.min(Math.max(text.split(/\s+/).length / 3 + 1.4, 3.2), max);
+}
+const AMBIENT_HOLD_MAX = 9;
+const PANEL_HOLD_MAX = 15;
 
 interface Target {
   kind: 'speaker' | 'landmark';
@@ -28,7 +40,9 @@ export interface Story {
 export function createStory(
   dialogue: Dialogue,
   speakers: Speaker[],
-  landmarks: Landmark[]
+  landmarks: Landmark[],
+  /** Murmurs the line in the speaker's register. Places have no voice and stay silent. */
+  speak: (voice: string, text: string) => void = () => {}
 ): Story {
   const hud = document.getElementById('hud')!;
 
@@ -77,7 +91,7 @@ export function createStory(
       ? `<span class="who">${who}</span>${text}`
       : `<span class="place">${text}</span>`;
     panel.classList.add('on');
-    panelTimer = PANEL_HOLD;
+    panelTimer = holdFor(text, PANEL_HOLD_MAX);
   }
 
   return {
@@ -112,7 +126,8 @@ export function createStory(
           if (text) {
             murmur.textContent = text;
             murmur.classList.add('on');
-            murmurTimer = AMBIENT_HOLD;
+            speak(who.voice, text);
+            murmurTimer = holdFor(text, AMBIENT_HOLD_MAX);
           }
         }
       }
@@ -125,6 +140,7 @@ export function createStory(
         const text = dialogue.pick(s.id, s, 'beat', stage);
         if (!text) return false;
         show(text, s.name);
+        speak(s.voice, text);
         return true;
       }
       if (target.landmark) {

@@ -1,0 +1,18 @@
+Camp and shelter props from the "Survival Pack" by Quaternius (https://quaternius.com),
+via Poly Pizza (https://poly.pizza/bundle/Survival-Pack-XzvQPP0yWB).
+Licensed CC0 1.0 Universal (public domain) - no attribution required.
+
+Chosen for the same reason as the flora: zero textures, a few hundred triangles each,
+and the same flat material-name convention as the character models, so they can be
+retinted by material name and cost no texture memory.
+
+Bonfire   <- poly.pizza/m/k1e0cOzi8A     704 tris
+Tent      <- poly.pizza/m/5Q7qIrfDxA     784 tris
+Backpack  <- poly.pizza/m/2g9Jm7kvIU   1,748 tris
+Torch     <- poly.pizza/m/pNsfJzhXiD     448 tris
+Pot       <- poly.pizza/m/Olu4b0aiiY     326 tris
+Pan       <- poly.pizza/m/f9my9iJZMv     246 tris
+Axe       <- poly.pizza/m/W0UYZPYSXf     236 tris
+WoodLog   <- poly.pizza/m/L4E32Wee6C     202 tris
+
+283 KB and 4,694 triangles for the whole set. Verified untextured: 0 images across all 8 glbs.

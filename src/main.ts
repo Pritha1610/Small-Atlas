@@ -11,22 +11,27 @@ import {
 } from './world/planet';
 import { createWater, waveHeight } from './world/water';
 import { createProps, type Clearing } from './world/props';
+import { loadModel } from './world/assets';
 import { windTime } from './render/wind';
 import { updateDaylight } from './render/daylight';
 import { createWonders } from './world/wonders';
 import { createSettlements } from './world/settlements';
+import { createSpecials } from './world/special';
+import { createCaves } from './world/caves';
 import { createBoat } from './world/boat';
 import { createSky } from './render/sky';
 import { createToonGradient } from './render/toon';
 import { createBlobShadow, updateBlobShadow } from './render/blobShadow';
 import { Input } from './player/input';
 import { Controller } from './player/controller';
-import { Player } from './player/player';
+import { Player, CHARACTERS } from './player/player';
 import { CameraRig } from './player/camera';
 import { createHud } from './ui';
 import { createTitle } from './title';
 import { Dialogue } from './story/dialogue';
 import { createStory } from './story/interaction';
+import { createPhotos } from './photo';
+import { createAudio } from './audio';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
@@ -64,11 +69,25 @@ scene.add(sky.mesh);
 const fog = new THREE.Fog(sky.horizonColor, 24, 90);
 scene.fog = fog;
 
+/**
+ * Far plane. The title frames the whole planet from 205 units out and needs the big one; play
+ * only ever sees as far as the fog, which is fully opaque at 90. Keeping the orbit far plane in
+ * play was costing a fortune: tilt the camera down and its frustum runs through the planet and
+ * out the other side, so the far half of the world - every settlement, every flora chunk - got
+ * submitted behind terrain that completely hides it. Measured at a downward tilt: 1,359 draws
+ * and 741k triangles, against 208 and 248k level.
+ */
+const FAR_TITLE = 800;
+const FAR_PLAY = 96;
+
+/** Play field of view. The viewfinder narrows it and puts it back on lowering the camera. */
+const PLAY_FOV = 55;
+
 const camera = new THREE.PerspectiveCamera(
-  55,
+  PLAY_FOV,
   window.innerWidth / window.innerHeight,
   0.1,
-  800
+  FAR_TITLE
 );
 
 // Two passes, the second writing straight to the screen. HDR target so the glow has headroom
@@ -139,17 +158,22 @@ function snapToGround(): void {
 snapToGround();
 
 const input = new Input(renderer.domElement);
+const audio = createAudio();
 
 const hudEl = document.getElementById('hud')!;
 hudEl.innerHTML =
   '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#f4f1ea;font-size:14px;letter-spacing:.08em;">Loading…</div>';
 
 async function boot(): Promise<void> {
-  const [wonders, player, boat] = await Promise.all([
+  const [wonders, boat] = await Promise.all([
     createWonders(gradientMap, spawnDir),
-    Player.create(gradientMap, input),
     createBoat(gradientMap),
+    // Both bodies are fetched and parsed up front so choosing one at the title costs nothing.
+    // The loader caches by path, so building the chosen Player afterwards is instant and Begin
+    // never stalls on a download - which is the whole point of loading behind the title.
+    ...Object.values(CHARACTERS).map((c) => loadModel(c.path)),
   ]);
+  const player = await Player.create(gradientMap, 'woman');
   scene.add(boat);
   scene.add(wonders.group);
   carveTerraces(planet, wonders.terraces);
@@ -162,6 +186,18 @@ async function boot(): Promise<void> {
   );
   scene.add(settlements.group);
 
+  // Three rare figures at the extremes of the world, outside any settlement.
+  const specials = await createSpecials(gradientMap, planet.mesh, spawnDir);
+  scene.add(specials.group);
+
+  // Caves before flora and after everything else: they need to know what is already standing
+  // so a secret never opens onto somebody's back garden.
+  const caves = await createCaves(gradientMap, spawnDir, [
+    ...settlements.landmarks.map((l) => l.position),
+    ...wonders.sites.map((s) => s.position),
+  ]);
+  scene.add(caves.group);
+
   // Flora goes in LAST, so it can be thinned around everything already standing: bare ground
   // where people live, and an open approach to each monument. Also after terracing, so plants
   // sit on the ground as it finally is rather than where it was.
@@ -171,12 +207,41 @@ async function boot(): Promise<void> {
     // thinned the ground cover by 16%, which does not read at all. 0.12 leaves roughly a third
     // of the grass and a scattering of trees, so the ground still looks alive.
     ...wonders.sites.map((s) => ({ position: s.position, radius: 24, floor: 0.12 })),
+    // Nothing grows through a rock chamber, but the ring just outside stays green.
+    ...caves.sites.map((p) => ({ position: p, radius: 15, floor: 0, core: 8 })),
   ];
   scene.add((await createProps(gradientMap, planet.mesh, clearings)).group);
 
   const dialogue = new Dialogue();
   await dialogue.load('./story/corpus.json');
-  const collidables = [planet.mesh, wonders.collisionMesh, settlements.collisionMesh];
+  const collidables = [planet.mesh, wonders.collisionMesh, settlements.collisionMesh, caves.collisionMesh];
+
+  /**
+   * 1 standing among people, 0 alone in open country. This is what chooses between the piano
+   * bed and the empty one, and it reuses the speaker positions the story layer already holds
+   * rather than inventing a second notion of where a settlement is.
+   */
+  const allSpeakers = [...settlements.speakers, ...specials.speakers];
+  function settledness(feet: THREE.Vector3): number {
+    let nearest = Infinity;
+    for (const sp of allSpeakers) {
+      const d = feet.distanceToSquared(sp.position);
+      if (d < nearest) nearest = d;
+    }
+    // Full piano within 18 units of somebody, fully open country past 52.
+    const t = THREE.MathUtils.clamp((Math.sqrt(nearest) - 18) / 34, 0, 1);
+    return 1 - t;
+  }
+
+  /** 1 at the centre of a cave chamber, 0 once you are outside it. Drives the audio muffle. */
+  function caveEnclosure(feet: THREE.Vector3): number {
+    let best = 0;
+    for (const c of caves.sites) {
+      const d = feet.distanceTo(c);
+      if (d < 8) best = Math.max(best, 1 - d / 8);
+    }
+    return best;
+  }
 
   const controller = new Controller(start);
   player.setPosition(start);
@@ -188,7 +253,26 @@ async function boot(): Promise<void> {
   const rig = new CameraRig(camera);
   const hud = createHud(wonders.sites);
   // After createHud: it assigns hud.innerHTML, which would wipe the story's own elements.
-  const story = createStory(dialogue, settlements.speakers, settlements.landmarks);
+  const story = createStory(
+    dialogue,
+    [...settlements.speakers, ...specials.speakers],
+    [...settlements.landmarks, ...caves.landmarks],
+    (voice, text) => audio.speak(voice, text)
+  );
+
+  const photos = await createPhotos({
+    camera,
+    renderer,
+    collidables,
+    wonderSites: wonders.sites,
+    wonderMesh: wonders.collisionMesh,
+    landmarks: [...settlements.landmarks, ...caves.landmarks],
+    caveSites: caves.sites,
+    dialogue,
+    playFov: PLAY_FOV,
+    stage: () => Math.min(4, hud.wondersFound),
+    feet: () => controller.feet,
+  });
 
   // Framing the whole planet. The bulk of the globe sits around radius 85 even though rare peaks
   // reach ~108, so framing to the peaks leaves the world looking small in frame. 205 fills about
@@ -227,6 +311,9 @@ async function boot(): Promise<void> {
   void title.waitForStart().then(async () => {
     // Bloom to white FIRST, so the jump from orbit to the ground happens unseen. Without it the
     // camera teleports 200 units in one frame, which reads as a glitch rather than a cut.
+    // Inside the click handler on purpose: an AudioContext created anywhere else starts
+    // suspended and never recovers without another gesture.
+    audio.unlock();
     await title.whiteOut(560);
     title.dismiss();
 
@@ -247,6 +334,9 @@ async function boot(): Promise<void> {
     requestAnimationFrame(tick);
     const dt = Math.min((now - lastTick) / 1000, 0.05);
     lastTick = now;
+    // The sky dome rides the camera; without this it would clip through the near plane on one
+    // side and outside the far plane on the other.
+    sky.mesh.position.copy(camera.position);
     windTime.value += dt;
     elapsed += dt;
     updateDaylight(elapsed, sun, fill, hemi, skyMat, fog);
@@ -271,7 +361,7 @@ async function boot(): Promise<void> {
       up.copy(controller.feet).normalize();
       // Run the rig anyway so it converges on the real gameplay framing; the camera is then
       // blended toward wherever it decided to be, which means no second jump at the handover.
-      rig.update(dt, controller.feet, up, input, collidables);
+      rig.update(dt, controller.feet, up, input, collidables, controller.flatVel);
       const t = THREE.MathUtils.clamp((now - introStartedAt) / 1000 / INTRO_TIME, 0, 1);
       // Ease-out: fast at first, drifting to a near-stop as it settles behind the character.
       const k = 1 - Math.pow(1 - t, 3);
@@ -283,15 +373,43 @@ async function boot(): Promise<void> {
       player.update(dt, controller, rig.moveForward);
       updateBlobShadow(shadow, controller.feet, controller.grounded, up);
       settlements.update(controller.feet, dt);
+    specials.update(controller.feet, dt);
       hud.update(now, controller.feet, rig.moveForward);
       composer.render(dt);
       input.endFrame();
-      if (t >= 1) mode = 'playing';
+      if (t >= 1) {
+        mode = 'playing';
+        // Only now, once the descent has landed: the intro starts 46 units up and needs the
+        // long view all the way down.
+        camera.far = FAR_PLAY;
+        camera.updateProjectionMatrix();
+      }
       return;
     }
 
+    if (input.justPressed('KeyM')) audio.toggleMute();
+    if (input.justPressed('KeyG')) photos.toggleGallery();
+    // The album is a full-screen overlay, so the world holds still behind it rather than the
+    // player wandering off a cliff while looking at photographs of a different world.
+    if (photos.galleryOpen) {
+      // No composer.render: the album is a full-screen opaque overlay, so every one of those
+      // frames was drawing half a million triangles into a buffer nobody can see, while the
+      // browser was also compositing an image-heavy DOM layer over the top. Measured, closing
+      // the album stalled to 16-28fps for about three seconds afterwards.
+      photos.update(dt);
+      input.endFrame();
+      return;
+    }
+    if (input.justPressed('KeyF')) photos.toggleAim();
+    // The pointer only steers the view while the camera is up.
+    rig.freeLook = photos.aiming;
+    if (input.justPressed('Tab') && photos.aiming) photos.cycleFilm();
+    if (input.justPressed('KeyC')) {
+      void player.setCharacter(player.character === 'woman' ? 'man' : 'woman');
+    }
+
     up.copy(controller.feet).normalize();
-    rig.update(dt, controller.feet, up, input, collidables);
+    rig.update(dt, controller.feet, up, input, collidables, controller.flatVel);
     // Substep the physics. Sprinting covers 9.4 * 0.05 = 0.47 units in one clamped frame,
     // which is enough to step straight through a hillside during a lag spike and end up
     // under the terrain. Measured: 0.05 tunnels on 22 of 40 sprints, 0.02 on none.
@@ -318,11 +436,26 @@ async function boot(): Promise<void> {
     player.update(dt, controller, rig.moveForward);
     updateBlobShadow(shadow, controller.feet, controller.grounded, up);
     settlements.update(controller.feet, dt);
+    specials.update(controller.feet, dt);
     story.update(dt, controller.feet, hud.wondersFound);
     if (input.justPressed('KeyE')) story.interact();
 
+    // Fed the same wave function the water shader uses, so the surf you hear is the swell you
+    // can see moving under you.
+    audio.update(dt, {
+      altitude: controller.feet.length() - waterRadius,
+      swell: waveHeight(controller.feet, windTime.value),
+      afloat,
+      speed: controller.flatSpeed,
+      enclosed: caveEnclosure(controller.feet),
+      settled: settledness(controller.feet),
+    });
+    photos.update(dt);
     hud.update(now, controller.feet, rig.moveForward);
     composer.render(dt);
+    // Directly after the draw and inside the same task: preserveDrawingBuffer is off in a
+    // production build, so this is the only moment the canvas can still be read.
+    photos.afterRender();
     input.endFrame();
   }
   requestAnimationFrame(tick);
@@ -340,6 +473,9 @@ async function boot(): Promise<void> {
       THREE,
       landmarks: settlements.landmarks,
       wonderSites: wonders.sites,
+      caveSites: caves.sites,
+      audio,
+      speakers: [...settlements.speakers, ...specials.speakers],
     };
   }
 }

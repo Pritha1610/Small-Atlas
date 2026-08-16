@@ -8,9 +8,9 @@ import { loadModel } from './assets';
 // Real tree models are ~2,400 triangles against the 56 of the old cylinder-and-blob, so the
 // count comes down hard. Chunked culling means only the ~2% over the horizon is ever drawn, but
 // there is no reason to carry more instances than the world needs.
-const TREE_COUNT = 650;
-const BUSH_COUNT = 550;
-const GRASS_COUNT = 46000;
+const TREE_COUNT = 455;
+const BUSH_COUNT = 385;
+const GRASS_COUNT = 32200;
 const TREE_MODELS = ['Tree_Broad', 'Tree_Tall', 'Tree_Slim'];
 const BUSH_MODELS = ['Bush', 'Bush_Berry'];
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -29,6 +29,12 @@ export interface Clearing {
   radius: number;
   /** Density right at the centre. 0 = bare earth, 0.35 = thinned but still green. */
   floor: number;
+  /**
+   * Absolute exclusion out to this distance, before the smoothstep starts. The smoothstep alone
+   * only reaches `floor` at the exact centre - at half the radius it still lets half the plants
+   * through - which grew a tree inside a cave chamber. Anything with an interior needs a core.
+   */
+  core?: number;
 }
 
 /** Probability a plant survives at this point, given every clearing near it. */
@@ -37,8 +43,10 @@ function densityAt(pos: THREE.Vector3, clearings: Clearing[]): number {
   for (const c of clearings) {
     const d = pos.distanceTo(c.position);
     if (d >= c.radius) continue;
-    // Smoothstep out from the centre so the edge of a clearing is a gradient, not a circle.
-    const t = d / c.radius;
+    const core = c.core ?? 0;
+    if (d <= core) return 0;
+    // Smoothstep out from the core so the edge of a clearing is a gradient, not a circle.
+    const t = (d - core) / (c.radius - core);
     const eased = t * t * (3 - 2 * t);
     keep = Math.min(keep, c.floor + (1 - c.floor) * eased);
   }
@@ -209,6 +217,10 @@ export async function createProps(
     position: c.position,
     radius: c.radius * 0.85,
     floor: Math.min(1, c.floor + 0.1),
+    // The core carries across UNSCALED. It is an absolute exclusion, not a taper, and rebuilding
+    // these objects without it is what let 396 plants grow inside the cave chambers - grass
+    // creeping back is a nice idea on a village green and a wrong one through solid rock.
+    core: c.core,
   }));
   const trees = scatter(sampler, TREE_COUNT, WATER_Y + 2.4, 17, 0.86, treeClear);
   const bushes = scatter(sampler, BUSH_COUNT, WATER_Y + 1.2, 19, 0.82, grassClear);
@@ -240,10 +252,14 @@ export async function createProps(
   const cells = chunkCells(CHUNKS);
 
   /** Instances one flora geometry per chunk, so a chunk off the horizon costs nothing. */
+  // minHeight/range are WORLD HEIGHTS, not raw scale multipliers: the downloaded bush variants
+  // are natively 1.07, 1.21 and 2.44 units tall, so one shared multiplier grew the third into a
+  // blob twice the player's height that blocked the camera. Normalising by each variant's own
+  // bounding box makes a "bush" the same size whichever model the cell drew.
   function plant(
     spots: Spot[],
     variants: THREE.BufferGeometry[],
-    minScale: number,
+    minHeight: number,
     range: number,
     sink: number
   ): void {
@@ -256,9 +272,12 @@ export async function createProps(
       const vi = Math.floor(Math.random() * variants.length);
       {
         const list = bucket;
-        const mesh = new THREE.InstancedMesh(variants[vi], floraMat, list.length);
+        const geo = variants[vi];
+        if (!geo.boundingBox) geo.computeBoundingBox();
+        const nativeH = Math.max(geo.boundingBox!.max.y, 0.001);
+        const mesh = new THREE.InstancedMesh(geo, floraMat, list.length);
         list.forEach((sp, i) => {
-          const sc = minScale + Math.random() * range;
+          const sc = (minHeight + Math.random() * range) / nativeH;
           q.setFromUnitVectors(WORLD_UP, sp.up);
           q.multiply(
             new THREE.Quaternion().setFromAxisAngle(WORLD_UP, Math.random() * Math.PI * 2)
@@ -277,8 +296,9 @@ export async function createProps(
     });
   }
 
-  plant(trees, treeGeoms, 0.7, 0.7, 0.15);
-  plant(bushes, bushGeoms, 0.6, 0.6, 0.1);
+  plant(trees, treeGeoms, 3.9, 3.9, 0.15);
+  // Knee-to-waist on a 1.65 player, with the tall end reaching her shoulder.
+  plant(bushes, bushGeoms, 0.5, 0.7, 0.1);
 
   // A field of one flat green reads as a carpet. Tinting per instance costs nothing but an
   // instanceColor buffer and is the single biggest change to how the ground looks; drier tones
@@ -297,10 +317,15 @@ export async function createProps(
     if (bucket.length === 0) return;
     const grassMesh = new THREE.InstancedMesh(tuftGeo, grassMat, bucket.length);
     bucket.forEach((s, i) => {
-      const sc = 0.55 + Math.random() * 0.5;
+      // Cubed random, not uniform: a uniform 0.55-1.05 put the MEDIAN tuft at two-thirds of
+      // the player's height, so the ground read as a hayfield you wade through. Skewed, most
+      // tufts land ankle-to-shin (~0.4) and only a few percent grow tall enough to notice -
+      // which is what makes the tall ones read as overgrowth instead of as the norm.
+      const sc = 0.18 + Math.pow(Math.random(), 3) * 0.52;
       q.setFromUnitVectors(WORLD_UP, s.up);
       q.multiply(new THREE.Quaternion().setFromAxisAngle(WORLD_UP, Math.random() * Math.PI * 2));
-      scale.set(sc, sc, sc);
+      // Squatter than it is tall, so a short tuft spreads instead of looking like a spike.
+      scale.set(sc * (1.15 + Math.random() * 0.35), sc, sc * (1.15 + Math.random() * 0.35));
       m.compose(s.pos, q, scale);
       grassMesh.setMatrixAt(i, m);
       tint.copy(GRASS_TONES[Math.floor(Math.random() * GRASS_TONES.length)]);
