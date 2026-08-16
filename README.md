@@ -235,11 +235,8 @@ Most of the feel lives in a few named constants:
 
 ## Credits
 
-- Playable characters "Animated Woman" and "Animated Man", and the camp/shelter props inside the caves ("Survival Pack"), by [Quaternius](https://quaternius.com) — CC0 1.0 public domain, via [Poly Pizza](https://poly.pizza). See `public/models/camp/LICENSE.txt`.
 - Music: Chopin nocturnes performed by Luke Faulkner and Xuan He — **public domain recordings** via [Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:Nocturnes_(Chopin)); ambient beds from **[John Bartmann's Straylight Drones Collection](https://freemusicarchive.org/music/John_Bartmann/100-ambient-atmospheric-soundtracks-straylight-drones-collection)** — CC0 1.0, no attribution required. See `public/audio/LICENSE.txt`.
-- Flora (trees, bushes) and the boat by [Quaternius](https://quaternius.com) — CC0 1.0 public domain, via [Poly Pizza](https://poly.pizza). Chosen because they are untextured and low-poly, so they match the flat-shaded look and cost no texture memory. See `public/models/flora/LICENSE.txt`.
-- The Salt-Reader, one of the three rare figures, is **"Witch" by [Quaternius](https://quaternius.com), licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)** — via [Poly Pizza](https://poly.pizza/m/QBEOV9ZUT8). Attribution required, and this is it. The other two rare figures ("Animated Woman", "Punk") and the camp props are CC0 and need none.
-- Wonder monuments, settlement structures, world dressing and the remaining NPC models authored in Blender.
+- Model licences and sources are recorded next to the assets themselves, in `LICENSE.txt` under each of `public/models/`, `public/models/camp/`, `public/models/flora/` and `public/models/special/`. Those files ship with the build.
 
 ## License
 
