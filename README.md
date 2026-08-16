@@ -102,7 +102,9 @@ Around 537k triangles and 620 draw calls per frame, holding 120fps on an Apple M
 - No shadow maps; the player's shadow is a blob decal.
 - No textures. The entire scene uses 2 (a toon gradient ramp and the blob shadow), so there is essentially no texture memory.
 
-A production build is ~47 MB on disk: ~39 MB of models, 6.8 MB of music, and ~200 KB of gzipped code. The dialogue corpus is 420 KB of JSON and the music is fetched only once you press Begin, so neither is in the bundle.
+A production build is **38.5 MB**: 28.8 MB of models, 6.8 MB of music, 1.7 MB of world dressing, and ~700 KB of code and assets. Gzip barely touches it — 37.6 MB over the wire — because almost all of it is glTF and MP3, which are already compressed. The code itself is 202 KB gzipped and the dialogue corpus 93 KB gzipped, so the bundle is not the problem and never will be: **the models are 75% of the build**, and the only lever that matters is decimating or Draco-compressing them.
+
+(Measured as real bytes. `du` reports ~47 MB for the same directory because APFS allocates in blocks — worth knowing before optimising something that is already smaller than it looks.)
 
 ## Getting Started
 
