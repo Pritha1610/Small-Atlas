@@ -10,7 +10,7 @@ import {
   sampleHeight,
 } from './world/planet';
 import { createWater, waveHeight } from './world/water';
-import { createProps } from './world/props';
+import { createProps, type Clearing } from './world/props';
 import { windTime } from './render/wind';
 import { updateDaylight } from './render/daylight';
 import { createWonders } from './world/wonders';
@@ -24,6 +24,7 @@ import { Controller } from './player/controller';
 import { Player } from './player/player';
 import { CameraRig } from './player/camera';
 import { createHud } from './ui';
+import { createTitle } from './title';
 import { Dialogue } from './story/dialogue';
 import { createStory } from './story/interaction';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -154,15 +155,24 @@ async function boot(): Promise<void> {
   carveTerraces(planet, wonders.terraces);
   snapToGround();
 
-  // After terracing, so props sit on the ground as it finally is rather than where it was.
-  scene.add(createProps(gradientMap, planet.mesh).group);
-
   const settlements = await createSettlements(
     gradientMap,
     planet.mesh,
     wonders.sites.map((s) => s.position.clone().normalize())
   );
   scene.add(settlements.group);
+
+  // Flora goes in LAST, so it can be thinned around everything already standing: bare ground
+  // where people live, and an open approach to each monument. Also after terracing, so plants
+  // sit on the ground as it finally is rather than where it was.
+  const clearings: Clearing[] = [
+    ...settlements.landmarks.map((l) => ({ position: l.position, radius: 15, floor: 0.04 })),
+    // Monuments keep an open approach, but never bare earth: measured, a floor of 0.3 only
+    // thinned the ground cover by 16%, which does not read at all. 0.12 leaves roughly a third
+    // of the grass and a scattering of trees, so the ground still looks alive.
+    ...wonders.sites.map((s) => ({ position: s.position, radius: 24, floor: 0.12 })),
+  ];
+  scene.add((await createProps(gradientMap, planet.mesh, clearings)).group);
 
   const dialogue = new Dialogue();
   await dialogue.load('./story/corpus.json');
@@ -180,12 +190,58 @@ async function boot(): Promise<void> {
   // After createHud: it assigns hud.innerHTML, which would wipe the story's own elements.
   const story = createStory(dialogue, settlements.speakers, settlements.landmarks);
 
+  // Framing the whole planet. The bulk of the globe sits around radius 85 even though rare peaks
+  // reach ~108, so framing to the peaks leaves the world looking small in frame. 205 fills about
+  // four fifths of the height with the land mass and still keeps the tallest summits on screen.
+  const TITLE_DIST = 205;
+  const TITLE_SPIN = 0.05;
+  // Fog is 24-90 for play, which would swallow the planet whole from out here. These are pushed
+  // beyond the far edge of the globe instead of setting scene.fog to null, because fog presence
+  // is a shader #define and toggling it would recompile every material mid-frame.
+  const PLAY_FOG_NEAR = fog.near;
+  const PLAY_FOG_FAR = fog.far;
+  fog.near = 420;
+  fog.far = 900;
+
+  let mode: 'title' | 'intro' | 'playing' = 'title';
+  let spin = 0;
+  /** Seconds the descent from the sky onto the character takes. */
+  const INTRO_TIME = 2.8;
+  // Wall-clock, NOT accumulated dt. dt is clamped to 0.05 per frame, so on a machine running at
+  // 1fps an "2.8 second" intro built from dt would really take 56 seconds and strand the player
+  // in a cutscene. Timestamps make the intro take 2.8 seconds at any frame rate.
+  let introStartedAt = 0;
+  const introStart = new THREE.Vector3();
+  const introUp = new THREE.Vector3();
+  const lookTarget = new THREE.Vector3();
+
   const up = new THREE.Vector3();
   const deck = new THREE.Vector3();
   const DECK_HEIGHT = 0.42;
   const MAX_PHYSICS_STEP = 0.02;
   let elapsed = 0;
   let lastTick = performance.now();
+
+  const title = createTitle();
+  hudEl.classList.add('pre-game');
+  void title.waitForStart().then(async () => {
+    // Bloom to white FIRST, so the jump from orbit to the ground happens unseen. Without it the
+    // camera teleports 200 units in one frame, which reads as a glitch rather than a cut.
+    await title.whiteOut(560);
+    title.dismiss();
+
+    fog.near = PLAY_FOG_NEAR;
+    fog.far = PLAY_FOG_FAR;
+    // Start the descent high above the player and let it settle onto the normal camera framing.
+    introUp.copy(controller.feet).normalize();
+    introStart.copy(controller.feet).addScaledVector(introUp, 46);
+    introStartedAt = performance.now();
+    mode = 'intro';
+
+    // Clear the white while the descent is already moving, so the world arrives in motion.
+    title.whiteIn(1150);
+    hudEl.classList.remove('pre-game');
+  });
 
   function tick(now: number): void {
     requestAnimationFrame(tick);
@@ -194,6 +250,45 @@ async function boot(): Promise<void> {
     windTime.value += dt;
     elapsed += dt;
     updateDaylight(elapsed, sun, fill, hemi, skyMat, fog);
+
+    if (mode === 'title') {
+      // Slow orbit tilted off the equator so the planet reads as a globe rather than a disc.
+      spin += dt * TITLE_SPIN;
+      camera.position.set(
+        Math.sin(spin) * TITLE_DIST * 0.94,
+        TITLE_DIST * 0.34,
+        Math.cos(spin) * TITLE_DIST * 0.94
+      );
+      camera.up.set(0, 1, 0);
+      camera.lookAt(0, 0, 0);
+      hud.update(now, controller.feet, rig.moveForward);
+      composer.render(dt);
+      input.endFrame();
+      return;
+    }
+
+    if (mode === 'intro') {
+      up.copy(controller.feet).normalize();
+      // Run the rig anyway so it converges on the real gameplay framing; the camera is then
+      // blended toward wherever it decided to be, which means no second jump at the handover.
+      rig.update(dt, controller.feet, up, input, collidables);
+      const t = THREE.MathUtils.clamp((now - introStartedAt) / 1000 / INTRO_TIME, 0, 1);
+      // Ease-out: fast at first, drifting to a near-stop as it settles behind the character.
+      const k = 1 - Math.pow(1 - t, 3);
+      camera.position.lerpVectors(introStart, camera.position, k);
+      camera.up.copy(introUp).lerp(up, k).normalize();
+      camera.lookAt(lookTarget.copy(controller.feet).addScaledVector(up, 1.3));
+
+      player.setPosition(controller.feet);
+      player.update(dt, controller, rig.moveForward);
+      updateBlobShadow(shadow, controller.feet, controller.grounded, up);
+      settlements.update(controller.feet, dt);
+      hud.update(now, controller.feet, rig.moveForward);
+      composer.render(dt);
+      input.endFrame();
+      if (t >= 1) mode = 'playing';
+      return;
+    }
 
     up.copy(controller.feet).normalize();
     rig.update(dt, controller.feet, up, input, collidables);
@@ -243,6 +338,8 @@ async function boot(): Promise<void> {
       input,
       collidables,
       THREE,
+      landmarks: settlements.landmarks,
+      wonderSites: wonders.sites,
     };
   }
 }

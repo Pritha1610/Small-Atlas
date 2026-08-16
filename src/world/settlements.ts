@@ -3,6 +3,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { PLANET_RADIUS, WATER_Y, sampleHeight } from './planet';
 import { loadModel, applyToonMaterial } from './assets';
+import { loadDressing, place, tangentsOf, WATER_RADIUS } from './dressing';
 import type { Band as StoryBand, Voice } from '../story/dialogue';
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -49,31 +50,31 @@ const BANDS: Band[] = [
   {
     kind: 'shore',
     loH: WATER_Y + 4.5,
-    hiH: 12,
+    hiH: 10,
     kit: ['S_Shanty', 'S_AFrame', 'S_LeanTo', 'S_Container', 'S_CartHome', 'S_NetHut', 'S_RoofShack'],
     life: 0.6,
     count: [4, 8],
   },
   {
     kind: 'upland',
-    loH: 12,
-    hiH: 22,
+    loH: 10,
+    hiH: 18,
     kit: ['S_Yurt', 'S_TerraceHouse', 'S_Watchtower', 'S_AFrame', 'S_CartHome', 'S_WaterCollector'],
     life: 1,
     count: [4, 9],
   },
   {
     kind: 'mountain',
-    loH: 22,
-    hiH: 39,
+    loH: 18,
+    hiH: 34,
     kit: ['M_AFrameHigh', 'M_LeanToRock', 'M_SledCart', 'M_YurtStone', 'S_Watchtower'],
     life: 1,
     count: [3, 6],
   },
   {
     kind: 'cave',
-    loH: 10,
-    hiH: 30,
+    loH: 8,
+    hiH: 28,
     kit: ['C_CaveHearth', 'C_CaveMouthTent', 'C_CaveRack', 'C_CaveWall', 'S_CliffCave', 'S_RockShelter'],
     life: 1,
     count: [3, 5],
@@ -105,7 +106,7 @@ const CLIPS_BY_BAND: Record<string, string[]> = {
 const ELDER_CLIPS = ['Rest_Sit', 'Rest_Lean', 'Idle_WeightShift', 'Idle_Scan'];
 const KID_CLIPS = ['Kid_Bounce', 'Kid_Fidget', 'Kid_Jump'];
 
-const SETTLEMENT_SLOTS = 46;
+const SETTLEMENT_SLOTS = 66;
 const MIN_SEPARATION = 0.17; // radians between settlements
 /** Only NPCs this close to the player get their mixer stepped. */
 const ANIM_RANGE = 45;
@@ -187,9 +188,10 @@ export async function createSettlements(
   const structureNames = [...new Set(BANDS.flatMap((b) => b.kit))];
   const npcNames = [...NPC_ADULTS, ...NPC_KIDS, ...NPC_TEENS, ...NPC_ELDERS];
 
-  const [structures, npcs] = await Promise.all([
+  const [structures, npcs, dressing] = await Promise.all([
     Promise.all(structureNames.map((n) => loadModel(`/models/structures/${n}.glb`))),
     Promise.all(npcNames.map((n) => loadModel(`/models/npcs/${n}.glb`))),
+    loadDressing(gradientMap),
   ]);
 
   const structureByName = new Map<string, THREE.Object3D>();
@@ -282,19 +284,41 @@ export async function createSettlements(
 
   const collisionGeometries: THREE.BufferGeometry[] = [];
   const residents: Resident[] = [];
+
+  /** Adds a placed object to the world and folds its geometry into the collision mesh. */
+  function addSolid(model: THREE.Object3D, solid = true): void {
+    group.add(model);
+    if (!solid) return;
+    model.updateMatrixWorld(true);
+    model.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const geo = mesh.geometry.clone();
+      geo.applyMatrix4(mesh.matrixWorld);
+      geo.deleteAttribute('normal');
+      if (geo.attributes.uv) geo.deleteAttribute('uv');
+      collisionGeometries.push(geo);
+    });
+  }
   const speakers: Speaker[] = [];
+  const siteList: Array<{ dir: THREE.Vector3; kind: string }> = [];
   const landmarks: Landmark[] = [];
   const chosen: THREE.Vector3[] = [];
 
   for (let slot = 0; slot < SETTLEMENT_SLOTS; slot++) {
+    // Each slot is ASSIGNED a band rather than taking whichever one a random probe happens to
+    // match. Letting the probe decide sounds fairer but is not: the drowned band spans a huge
+    // area of shallow seabed, so it won every roll - measured 30 of 46 settlements drowned and
+    // not a single shore, upland or mountain town, i.e. a world of nothing but ruins.
+    const want = BANDS[slot % BANDS.length];
     const seed = fib(slot, SETTLEMENT_SLOTS);
     const [s1, s2] = tangents(seed);
 
     // Wander outward from the slot looking for ground that suits some band.
     let dir: THREE.Vector3 | null = null;
     let band: Band | null = null;
-    for (let attempt = 0; attempt < 90; attempt++) {
-      const spread = (attempt / 90) * 0.5;
+    for (let attempt = 0; attempt < 220; attempt++) {
+      const spread = (attempt / 220) * 0.62;
       const a = Math.random() * Math.PI * 2;
       const probe = seed
         .clone()
@@ -309,16 +333,15 @@ export async function createSettlements(
       const rel = relief(probe, 7 / PLANET_RADIUS);
       // Caves want a steep face; everything else wants ground you could build on.
       const wantsSteep = rel > 4.5;
-      const candidates = BANDS.filter(
-        (b) => h >= b.loH && h < b.hiH && (b.kind === 'cave') === wantsSteep
-      );
-      if (candidates.length === 0) continue;
+      if (h < want.loH || h >= want.hiH) continue;
+      if ((want.kind === 'cave') !== wantsSteep) continue;
       dir = probe;
-      band = pick(candidates);
+      band = want;
       break;
     }
     if (!dir || !band) continue;
     chosen.push(dir.clone());
+    siteList.push({ dir: dir.clone(), kind: band.kind });
     const centre = surfacePoint(dir);
     if (centre) {
       landmarks.push({
@@ -390,6 +413,58 @@ export async function createSettlements(
       const pbox = protoBox.get(kitName);
       if (pbox) placed.push({ box: pbox, inv: model.matrixWorld.clone().invert() });
 
+      // Vines claim what has been abandoned, so they follow the same 'life' value that decides
+      // whether anyone still lives here. Not collidable - you should be able to push through
+      // leaves - and rationed, because they are by far the heaviest models in the set.
+      if (Math.random() > band.life * 0.8) {
+        const vbox = new THREE.Box3().setFromObject(model);
+        const vsize = new THREE.Vector3();
+        vbox.getSize(vsize);
+        const onTop = Math.random() < 0.4;
+        const vproto = dressing.get(
+          onTop
+            ? pick(dressing.vines.top)
+            : pick(Math.random() < 0.75 ? dressing.vines.wall : dressing.vines.ground)
+        );
+        if (vproto) {
+          const [v1, v2] = tangentsOf(sdir);
+          const off = Math.random() * Math.PI * 2;
+          const reach = Math.max(vsize.x, vsize.z) * 0.42;
+          const at = seat
+            .clone()
+            .addScaledVector(v1, Math.cos(off) * reach)
+            .addScaledVector(v2, Math.sin(off) * reach)
+            .addScaledVector(sdir, onTop ? Math.max(vsize.y * 0.72, 1.2) : 0.2);
+          group.add(place(vproto, sdir, at));
+        }
+      }
+
+      // Lived-in places accumulate stuff, and this clutter is most of what makes a settlement
+      // read as inhabited rather than as a few models dropped on a hill.
+      const clutter = band.kind === 'drowned' ? 1 : 2 + Math.floor(Math.random() * 3);
+      for (let c = 0; c < clutter; c++) {
+        const table =
+          band.kind === 'waterline' || band.kind === 'drowned'
+            ? dressing.props.shore
+            : Math.random() < 0.55
+              ? dressing.props.camp
+              : dressing.props.work;
+        const cproto = dressing.get(pick(table));
+        if (!cproto) continue;
+        const ca = Math.random() * Math.PI * 2;
+        const cr = 2.5 + Math.random() * 6;
+        const cdir = sdir
+          .clone()
+          .addScaledVector(t1, (Math.cos(ca) * cr) / PLANET_RADIUS)
+          .addScaledVector(t2, (Math.sin(ca) * cr) / PLANET_RADIUS)
+          .normalize();
+        const chit = surfaceHit(cdir);
+        if (!chit) continue;
+        const cpt =
+          chit.point.length() > WATER_RADIUS ? chit.point : cdir.clone().multiplyScalar(WATER_RADIUS);
+        group.add(place(cproto, cdir, cpt, 0.15));
+      }
+
       // Ruined bands get nobody, which is what makes them read as lost. Deferred until every
       // building in this settlement exists, so a resident can be kept out of ALL of them and
       // not just the one they belong to.
@@ -450,6 +525,71 @@ export async function createSettlements(
         position: spot.point.clone(),
       });
     }
+  }
+
+  // Walkways, docks and ladders. The waterline settlements are the ones that genuinely need
+  // them - homes on stilts with no way between them read as unfinished - so they get boardwalks
+  // radiating from the centre, while dry settlements just get the odd stair or sandbag line.
+  for (const site of siteList) {
+    const water = site.kind === 'waterline' || site.kind === 'drowned';
+    const runs = water ? 3 + Math.floor(Math.random() * 4) : Math.random() < 0.5 ? 1 : 0;
+    const [c1, c2] = tangentsOf(site.dir);
+    for (let r = 0; r < runs; r++) {
+      const table = water ? dressing.connectors.water : dressing.connectors.land;
+      const cproto = dressing.get(pick(table));
+      if (!cproto) continue;
+      const a = Math.random() * Math.PI * 2;
+      const dist = 4 + Math.random() * 9;
+      const cdir = site.dir
+        .clone()
+        .addScaledVector(c1, (Math.cos(a) * dist) / PLANET_RADIUS)
+        .addScaledVector(c2, (Math.sin(a) * dist) / PLANET_RADIUS)
+        .normalize();
+      const chit = surfaceHit(cdir);
+      if (!chit) continue;
+      // Boardwalks hang off the water surface; their legs are modelled to reach down to the bed.
+      const cpt = water
+        ? cdir.clone().multiplyScalar(WATER_RADIUS + 0.15)
+        : chit.point;
+      addSolid(place(cproto, cdir, cpt));
+    }
+  }
+
+  // Tall silhouettes scattered between settlements. These are what you actually steer by on a
+  // sphere where the horizon is only ~23 units away: something is always rising over it.
+  // Placed away from settlements so they break up the gaps rather than crowd what is already busy.
+  const VERTICAL_COUNT = 42;
+  for (let i = 0; i < VERTICAL_COUNT; i++) {
+    let vdir: THREE.Vector3 | null = null;
+    let kind: 'water' | 'shore' | 'land' = 'land';
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const cand = new THREE.Vector3(
+        Math.random() * 2 - 1,
+        Math.random() * 2 - 1,
+        Math.random() * 2 - 1
+      ).normalize();
+      if (chosen.some((c) => cand.angleTo(c) < 0.09)) continue;
+      if (avoid.some((c) => cand.angleTo(c) < 0.1)) continue;
+      const hit = surfaceHit(cand);
+      if (!hit) continue;
+      const alt = hit.point.length() - PLANET_RADIUS;
+      // Anything on a real slope will float on one side, so only fairly flat ground qualifies.
+      if (hit.normal.dot(cand) < 0.93) continue;
+      if (alt < WATER_Y - 2.5) kind = 'water';
+      else if (alt < WATER_Y + 5) kind = 'shore';
+      else kind = 'land';
+      vdir = cand;
+      break;
+    }
+    if (!vdir) continue;
+    const vproto = dressing.get(pick(dressing.verticals[kind]));
+    if (!vproto) continue;
+    const vhit = surfaceHit(vdir);
+    if (!vhit) continue;
+    // Sea-going verticals stand in the water rather than on the seabed metres below.
+    const vpt =
+      kind === 'water' ? vdir.clone().multiplyScalar(WATER_RADIUS - 0.4) : vhit.point;
+    addSolid(place(vproto, vdir, vpt));
   }
 
   const merged = mergeGeometries(collisionGeometries, false);

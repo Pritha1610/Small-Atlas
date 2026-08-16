@@ -2,15 +2,17 @@ import * as THREE from 'three';
 import { PLANET_RADIUS, WATER_Y } from './planet';
 import { windTime } from '../render/wind';
 
-// The sea is what is killing this world, so it is deliberately oversized: crests run about two
-// player-heights, which drowns the shoreline on every pass and makes open water feel hostile
-// rather than decorative.
+// The sea is what is killing this world, so it stays oversized - but only just enough. These
+// were tuned against sea level and the settlement bands, not by eye: at 2.2/0.95/0.35 the crests
+// reached altitude 4.6 and put 39 of 46 settlements inside the wave envelope, drowning shore
+// towns that are meant to be dry. Now the crests top out around 3, which still washes clean over
+// the stilt houses and rafts at the waterline (which is the point) and leaves the shore alone.
 /** Peak displacement of the long swell, in world units. Player is ~1.65 tall. */
-const SWELL = 2.2;
+const SWELL = 1.25;
 /** Peak displacement of the shorter chop riding on top of it. */
-const CHOP = 0.95;
+const CHOP = 0.5;
 /** Fast, small-scale turbulence so the surface never looks like a smooth rolling sheet. */
-const TURB = 0.35;
+const TURB = 0.2;
 
 /**
  * Height of the water surface above its rest radius at a point, matching the shader below.

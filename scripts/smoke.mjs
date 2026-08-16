@@ -13,7 +13,10 @@ const browser = await chromium.launch({
   ],
 });
 
-const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+// Software rendering is fill-rate bound, and this scene got a lot heavier (1000+ objects,
+// 46k grass instances, 1100+ skinned meshes). A smaller viewport is the cheapest way to buy
+// back frames so the movement check actually gets to run.
+const page = await browser.newPage({ viewport: { width: 640, height: 400 } });
 
 const consoleErrors = [];
 page.on('console', (msg) => {
@@ -27,6 +30,11 @@ await page.waitForFunction(() => {
   return g && g.renderer && g.renderer.info;
 }, null, { timeout: 20000 });
 
+// The game now opens on a title screen and the player cannot move until it is dismissed.
+// Begin, then wait out the white flash and the descent before testing anything.
+await page.waitForSelector('#title .begin', { timeout: 20000 });
+await page.click('#title .begin');
+await page.waitForFunction(() => !document.querySelector('#flash'), null, { timeout: 20000 });
 await page.waitForTimeout(3000);
 
 const fps = await page.locator('.fps').textContent();

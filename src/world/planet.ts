@@ -3,7 +3,10 @@ import { fbm, ridged } from './noise';
 import { makeOutline } from '../render/toon';
 
 export const PLANET_RADIUS = 75;
-export const WATER_Y = 1.8;
+// Sea level. Everything that cares about the coast is expressed as WATER_Y + an offset -
+// settlement bands, plant height bands, the wonder clearance - so lowering this moves the whole
+// shoreline down coherently rather than needing each of them retuned.
+export const WATER_Y = 1.05;
 
 // The noise is sampled on the unit direction vector, so one noise cell spans PLANET_RADIUS/freq
 // world units and fbm's mean is well below 0.5 at low frequencies. Every constant below was

@@ -1,0 +1,10 @@
+Low-poly flora models by Quaternius (https://quaternius.com), via Poly Pizza
+(https://poly.pizza). Licensed CC0 1.0 Universal (public domain) - no attribution
+required. Chosen specifically because they are untextured and low-poly, so they
+match the flat-shaded toon look and cost no texture memory.
+
+Tree_Broad  <- poly.pizza/m/2paAm1ja4w
+Tree_Tall   <- poly.pizza/m/9nvGuZlbpE
+Tree_Slim   <- poly.pizza/m/i4QMw4L64D
+Bush        <- poly.pizza/m/92EytlU1El
+Bush_Berry  <- poly.pizza/m/TSbIxkDtxF

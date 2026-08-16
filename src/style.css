@@ -171,3 +171,88 @@ body {
   transition: opacity 0.5s ease;
 }
 #hud .murmur.on { opacity: 1; }
+
+#title {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  /* Only a soft vignette: the planet behind it is the artwork, so the overlay must not cover it. */
+  background: radial-gradient(ellipse at center, rgba(8, 12, 22, 0) 30%, rgba(8, 12, 22, 0.62) 100%);
+  opacity: 1;
+  transition: opacity 0.8s ease;
+}
+#title.gone { opacity: 0; pointer-events: none; }
+
+#title h1 {
+  margin: 0;
+  color: #f7f4ec;
+  font-size: clamp(38px, 7vw, 86px);
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  line-height: 1;
+  text-transform: uppercase;
+  text-shadow: 0 4px 26px rgba(0, 0, 0, 0.65);
+}
+#title h1 span {
+  display: block;
+  margin-top: 10px;
+  color: #f4a261;
+  font-size: 0.26em;
+  letter-spacing: 0.42em;
+}
+
+#title .tagline {
+  margin: 26px 0 0;
+  color: rgba(245, 241, 232, 0.95);
+  font-size: 14px;
+  line-height: 1.9;
+  letter-spacing: 0.04em;
+  /* Sits directly over the planet, so it needs a real shadow rather than a hint of one. */
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95), 0 4px 18px rgba(0, 0, 0, 0.9);
+}
+
+#title .begin {
+  margin-top: 34px;
+  padding: 13px 46px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #241a10;
+  background: #f4a261;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.4);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+#title .begin:hover { background: #ffb977; transform: translateY(-2px); }
+#title .begin:active { transform: translateY(0); }
+
+#title .hint {
+  margin: 20px 0 0;
+  color: rgba(240, 236, 226, 0.72);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95);
+}
+
+/* The HUD is built while the title is still up, so it starts hidden and fades in with play. */
+#hud.pre-game { opacity: 0; }
+#hud { transition: opacity 0.7s ease; }
+
+#flash {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: #f7f5ef;
+  opacity: 0;
+  pointer-events: none;
+}
+#flash.on { opacity: 1; }
