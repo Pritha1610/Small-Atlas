@@ -2,13 +2,27 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
+/**
+ * A file from public/, addressed from the app's base rather than from the page.
+ *
+ * The page address is not a safe anchor: the dev server answers ANY path with the app, so opened
+ * at /play/ or /index.html/ a relative "./story/corpus.json" became /play/story/corpus.json and
+ * came back as the HTML page. The dialogue failed to parse, every E press found nothing to say,
+ * and talk and examine silently did nothing. The models only survived because their paths
+ * happened to be absolute - which in turn broke them for any build hosted in a subfolder.
+ * BASE_URL is "/" in dev and the configured base ("./") in a build, which is right for both.
+ */
+export function asset(path: string): string {
+  return import.meta.env.BASE_URL + path.replace(/^\.?\//, '');
+}
+
 const loader = new GLTFLoader();
 const cache = new Map<string, Promise<{ scene: THREE.Group; animations: THREE.AnimationClip[]; skinned: boolean }>>();
 
 function load(path: string) {
   let entry = cache.get(path);
   if (!entry) {
-    entry = loader.loadAsync(path).then(
+    entry = loader.loadAsync(asset(path)).then(
       (gltf) => {
         let skinned = false;
         gltf.scene.traverse((o) => {

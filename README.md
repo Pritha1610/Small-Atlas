@@ -30,11 +30,15 @@ The sea has been rising for six generations. Walk a procedurally generated world
 - **Five stages of revelation, gated by exploration** rather than by talking. Stage 0 is weather and work with no mention of the flood; stage 4 is what people do with an ending. The story deepens because you went somewhere.
 - Children have never seen the water lower, so to them the flood is not a tragedy — it is simply the world. Adults deflect grief into logistics. Elders reveal enormous things while complaining about something trivial.
 - The seven wonders are all misremembered, each in a revealing way: Giza as deliberate flood markers, the Great Wall as a failed dam whose breach pilgrims still search for, the Colosseum as a cistern where lions drank.
-- NPCs murmur ambient lines as you pass and give longer beats on `E`. Each remembers what they have already told you. Places can be examined too, and say more as the story unlocks.
+- NPCs murmur ambient lines as you pass (signed with their name, so you can go and find them) and give longer beats on `E`. Each remembers what they have already told you, and turns to face you while they talk; a marker floats over whoever `E` would talk to. Places can be examined too - settlements, caves, open water and all seven monuments - and each examine moves on to something you have not read yet, deepest first.
+- **The story is said out loud as well as overheard.** Each stage opens with a chapter card, a line under the title always says what to do next, and from your second conversation on people will point you at the nearest monument you have not seen ("The flood markers at Giza. Ahead of you, off to the right. A good walk."), which is then ringed on the map. The chapters and the pointing lines are in `story/chapters.ts`.
+- **Six unsent messages.** Somebody left things for somebody who never came to find them: a stone with a faded red ribbon at the water's edge, inside a cave, behind a monument, on high ground, out over a drowned settlement and at the far end of the world. Each is marked on the map with a rose "?" - bright until read, dim after - and has a rose glint floating over it until then. Walk up to one and it opens by itself; E reads it again. They are in `story/keepsakes.ts`.
+- **Notes from the developer** are pinned to posts in out-of-the-way places - the highest peak, inside a cave, out over a drowned settlement, the far side of the world. Their text and where each goes are in `story/notes.ts`.
 
 **World**
 - Procedurally generated planet of radius 75 — a continent mask gives coherent landmasses with real coastlines, ridged multifractal noise builds mountain ranges, terraced bands form mesas, and inverted-ridge channels carve valleys to the sea. About 39% land, peaks near 33 units, a new world every page load.
-- **Dense, not empty.** Roughly 35 settlements and 1,000+ placed objects mean only ~4% of land has nothing in view, against 60% before the density pass. Median walk to the nearest structure is 14 units, well inside the ~23-unit horizon.
+- **Dense, not empty.** Roughly 35 settlements and 800+ placed objects mean only ~4% of land has nothing in view, against 60% before the density pass. Median walk to the nearest structure is 14 units, well inside the ~23-unit horizon.
+- **Nothing stands inside anything else.** Every placement pass - monuments, buildings, walkways, landmarks, caves, flora - checks one shared list of claimed ground and adds to it. Before it, each pass only knew its own kind: per world, ~90 pairs of houses overlapped, ~115 crates sat inside walls, ~43 walkways ran into houses and a few houses stood inside monuments. Dry buildings are seated on the lowest ground under their footprint, so none hangs off a slope, and waterline docks point out to sea. `npm run placement` checks all of it.
 - Settlements are placed by elevation band — drowned ruins, stilt clusters and rafts, shore shanties, upland yurts and terraces, mountain camps, cave dwellings — each with its own kit from 28 hand-modelled structures.
 - 42 tall landmarks (lighthouses, drowned towers, silos, cranes, spires) scattered *between* settlements, so something is always rising over the horizon. Boardwalks and docks radiate from waterline settlements; vines claim only the buildings people have given up on.
 - **Caves, as secrets.** A heightfield planet cannot grow a cave - one radius per direction means no overhang and no roof - so up to seven hollow rock outcrops are seated on flat, dry, remote ground instead. From outside each reads as a boulder on a hillside; walk round it and there is a mouth. Placement avoids every settlement and monument, and no two are within 30 units of each other.
@@ -71,6 +75,14 @@ The sea has been rising for six generations. Walk a procedurally generated world
 **Movement**
 - An unhurried walk (3.8) with an optional sprint (6.8). At the old 5.4 a lap of the 471-unit circumference took 87 seconds, which made a planet feel like a courtyard; it now takes just over two minutes. Walk and run clips play at the rate the character is actually travelling, so the feet stay planted.
 - Tangent-plane movement on the sphere with gravity, jumping, slope limits and step-up, substepped at 20 ms so sprinting cannot tunnel through terrain during a frame hitch.
+- **Walls slide, they do not stick.** Only the part of your motion into a wall is removed, so walking at one on an angle carries you along it. Probes at knee and chest height: anything under a step's height (kerbs, stair risers, rocks) is walked up onto, rails and eaves still stop you.
+- **Ground has a grade.** Walking uphill costs speed (about 40% straight up a 45-degree slope) and downhill gives a little back; ground too steep to stand on slides you down it instead of holding you there.
+- **Forgiving jumps.** A jump still counts for 0.12s after running off an edge, a press up to 0.14s before landing fires on landing, and letting go early cuts the jump short - tap to hop, hold to clear something.
+- **The boat is a boat.** Slow to get going, slow to turn, and it glides on when you let go; the hull pitches and rolls with the slope of the wave under it, and you rock with it.
+- People are solid, and grass parts around your feet as you walk through it (in the vertex shader, one uniform a frame).
+- **The body has width.** Collision used to be a line through the middle of the character, so shoulders went through door frames and tree trunks. Wall probes now run down each shoulder too, and a pass each frame pushes the body back out of anything it ended up overlapping. Tree trunks and fixtures (winches, bollards, crate stacks, rocks, signs) are solid; reeds and seaweed are walked through.
+- **Loose things have mass.** Drums, jerrycans, buoys, stools, pots and the like are rigid bodies ([Rapier](https://rapier.rs/)): walk into one and it is shoved, rolls and settles, and at sea it floats. All of them start asleep and cost nothing until touched.
+- **Fall far enough and she goes limp.** Past about a four-unit drop the character becomes a ragdoll - twelve bodies, ball joints at hips, shoulders and neck, hinges with real limits at knees, elbows and spine - carrying the speed she fell at. She tumbles down the slope she hit or floats if she went into the sea, then gets up where she came to rest, easing from that pose back into her walk. `npm run physics` checks all of the above against the real controller, the real physics world and the real character.
 - Collision against the monuments' and buildings' real geometry — you can walk into the Colosseum and up Chichen Itza's steps, not bump an invisible box.
 - Board a boat automatically on contact with water; it rides the actual wave surface rather than a flat sea.
 - **Standing still means standing still.** The character keeps its facing when it stops, so the camera can be walked all the way round to their face. Previously an idle character faced the camera's forward vector, which meant orbiting swung them with it and their front was unreachable by construction.
@@ -87,8 +99,9 @@ The sea has been rising for six generations. Walk a procedurally generated world
 - [TypeScript](https://www.typescriptlang.org/) (strict)
 - [Three.js](https://threejs.org/) — 3D rendering
 - [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) — accelerated raycasting for terrain and collision
+- [Rapier](https://rapier.rs/) (`@dimforge/rapier3d-compat`) — rigid bodies for the ragdoll and loose props. Loaded as its own chunk, alongside the models.
 
-Only two runtime dependencies. Everything else (glTF loading, geometry merging, surface sampling, post-processing) comes from `three/examples/jsm`.
+Three runtime dependencies. Everything else (glTF loading, geometry merging, surface sampling, post-processing) comes from `three/examples/jsm`. The character still walks on the hand-tuned raycast controller; Rapier is only what the world does back.
 
 ## Performance
 
@@ -102,7 +115,7 @@ Around 537k triangles and 620 draw calls per frame, holding 120fps on an Apple M
 - No shadow maps; the player's shadow is a blob decal.
 - No textures. The entire scene uses 2 (a toon gradient ramp and the blob shadow), so there is essentially no texture memory.
 
-A production build is **38.5 MB**: 28.8 MB of models, 6.8 MB of music, 1.7 MB of world dressing, and ~700 KB of code and assets. Gzip barely touches it — 37.6 MB over the wire — because almost all of it is glTF and MP3, which are already compressed. The code itself is 202 KB gzipped and the dialogue corpus 93 KB gzipped, so the bundle is not the problem and never will be: **the models are 75% of the build**, and the only lever that matters is decimating or Draco-compressing them.
+A production build is **38.5 MB**: 28.8 MB of models, 6.8 MB of music, 1.7 MB of world dressing, and ~700 KB of code and assets. Gzip barely touches it — 37.6 MB over the wire — because almost all of it is glTF and MP3, which are already compressed. The game's code is 220 KB gzipped, the physics engine another 762 KB (in its own chunk, fetched in parallel with the models), and the dialogue corpus 93 KB gzipped, so the bundle is not the problem and never will be: **the models are 75% of the build**, and the only lever that matters is decimating or Draco-compressing them.
 
 (Measured as real bytes. `du` reports ~47 MB for the same directory because APFS allocates in blocks — worth knowing before optimising something that is already smaller than it looks.)
 
@@ -138,6 +151,12 @@ npm run preview
 
 The production build is emitted to `dist/`.
 
+### Deploy to Vercel
+
+Import the repository in Vercel and deploy - `vercel.json` sets everything: `npm ci`, `npm run build`, output in `dist/`. It is a static site with no server code and no environment variables.
+
+`vercel.json` also sets caching: the hashed bundles in `assets/` are cached forever, and the models and music (about 40 MB, unhashed) for a day, revalidated in the background for a week, so a returning player does not download the world again. If you replace a model and need it live at once, rename the file.
+
 ### Smoke test
 
 ```bash
@@ -146,6 +165,18 @@ npm run smoke        # in another
 ```
 
 Headless Playwright check: dismisses the title, waits out the intro, then verifies the app renders (a grid of sampled pixels is lit), the player moves, and no console errors occur.
+
+```bash
+npm run placement    # with the dev server running; RUNS=5 for more worlds
+npm run physics      # with the dev server running
+npm run dialogue     # with the dev server running
+```
+
+`physics` drives the real movement controller against small known pieces of geometry - an angled wall, a low and a high step, a cliff, a ramp, a ledge, open water - and fails if walls stop sliding, steps stop being climbable, cliffs stop sliding you down, uphill stops costing speed, jumps lose their coyote time, buffer or tap-versus-hold height, the boat stops gliding, or you can walk through a person.
+
+`dialogue` presses E over and over at every place, every monument and every kind of person at several story stages, and fails if a press ever shows the line already on screen, if a round skips a line, or if a newly unlocked stage is not heard first.
+
+`placement` boots several fresh worlds and fails if any building overlaps another, if clutter, walkways or landmarks sit inside a building, if a building stands inside a monument, if a tree grows through a roof, or if dry buildings float off slopes.
 
 Note that smoke runs under **software rendering** (`--use-angle=swiftshader`) for portability, so the `fps` it prints measures a CPU rasteriser and is *not* a performance signal. It is a boots / renders / moves / no-errors gate. Real performance is measured against a GPU separately.
 
@@ -157,10 +188,14 @@ src/
   title.ts         # Opening screen, white bloom, descent handoff
   style.css        # Global styles, HUD, dialogue, title
   ui.ts            # HUD, minimap, wonder discovery
+  touch.ts         # On-screen stick and buttons for phones and tablets
   photo.ts         # In-game camera, film stocks, IndexedDB album
   audio.ts         # Music, and synthesised sea / wind / cave muffle
+  physics/
+    world.ts       # Rapier world: gravity toward the core, buoyancy, loose props, the player's capsule
   player/
     input.ts       # Keyboard/pointer input
+    ragdoll.ts     # The body going limp after a long fall, and its joints
     controller.ts  # Spherical movement, gravity, ground & wall collision
     player.ts      # Character model, animation, swappable skins
     camera.ts      # Third-person camera rig
@@ -173,7 +208,10 @@ src/
     daylight.ts    # Day cycle: sun arc, light and sky palette
   story/
     dialogue.ts    # Corpus loading, line selection, story stages
-    interaction.ts # Proximity prompts, dialogue panel, ambient murmurs
+    interaction.ts # Proximity prompts, dialogue panel, ambient murmurs, chapter cards
+    chapters.ts    # Chapter titles, the "what now" line, people pointing the way
+    notes.ts       # The developer's notes: what they say and where they go
+    keepsakes.ts   # The six unsent messages
   world/
     noise.ts       # Value noise, fbm, ridged multifractal
     planet.ts      # Terrain generation, colouring, terrace carving
@@ -185,6 +223,7 @@ src/
     wonders.ts     # Monument loading, placement, collision
     settlements.ts # Settlements, residents, speakers, landmarks
     boat.ts        # Boat model
+    notes.ts       # Places the developer's notes and the keepsakes, well apart
 scripts/
   smoke.mjs        # Headless smoke test
 docs/
@@ -201,14 +240,19 @@ public/
 
 | Input | Action |
 | --- | --- |
-| `W` / `A` / `S` / `D` | Move |
-| `Shift` | Run |
-| `Space` | Jump |
+| `W` / `A` / `S` / `D` or arrow keys | Move |
+| `Shift` | Run while held |
+| `R` | Run toggle — stays running until pressed again |
+| `Space` | Jump — hold for a full jump, tap for a hop |
 | `E` | Talk to someone, or examine a place |
-| `C` | Swap character model |
-| `F` | Raise / lower the camera — drag aims, click shoots, `Tab` changes film |
-| `G` | Open the album |
+| `C` | Swap character model (remembered between visits) |
+| `F` | Raise / lower the camera — drag aims, click or `Enter` shoots, `Tab` changes film |
+| `G` | Open the album — open a photo to save it as a JPEG |
+| `Esc` | Back out: close the photo, then the album, then lower the camera |
 | `M` | Sound on / off |
+| `H` | Show / hide the key list (it folds itself away once you have walked a while) |
+
+On a phone or tablet the controls appear on screen: put a thumb anywhere on the left half to walk (however far you push, it walks; the » button above jump toggles running), tap the "Talk to …" prompt to talk and the open line to hear the next one, and use the buttons bottom-right to jump, raise the camera, open the album, swap character and toggle sound. With the camera up, drag to aim and tap to shoot. Portrait works too; the field of view widens so it is not a slot.
 
 Walk into water and you board the boat automatically; step back onto land and you leave it.
 
@@ -224,9 +268,21 @@ Most of the feel lives in a few named constants:
 | `NEAR_ALPHA`, `OPAQUE_AT`, `CLEAR_TO` | `world/water.ts` | How far you can see into the water |
 | `TREE_COUNT`, `BUSH_COUNT`, `GRASS_COUNT`, `CHUNKS` | `world/props.ts` | Foliage density and culling granularity |
 | `SETTLEMENT_SLOTS`, `MAX_RESIDENTS`, `ANIM_RANGE` | `world/settlements.ts` | How populated the world feels |
+| `FOOTPRINT`, `MAX_BUILD_RELIEF`, `BUILD_TRIES` | `world/settlements.ts` | How tightly buildings pack, and how steep a slope they will stand on |
+| `STICK_DEAD`, `STICK_FULL` | `player/controller.ts` | Touch stick dead zone, and how far to push it for full speed |
+| `BODY_R` | `player/controller.ts` | How wide the body is for collision |
+| `RAGDOLL_FALL` | `main.ts` | How fast a fall has to be before she goes limp |
+| `PARTS`, `JOINTS` | `player/ragdoll.ts` | Ragdoll body sizes, and how far each joint bends |
+| `LOOSE`, `WALK_THROUGH` | `world/settlements.ts` | Which clutter can be knocked about, and which is walked through |
 | `PINNED_PHASE`, `DAY_SECONDS` | `render/daylight.ts` | Pin the sun, or run the day cycle |
 | `GRADE`, `GLOW`, `VIGNETTE`, `DITHER` | `render/grade.ts` | Post-processing look |
 | `WALK`, `RUN`, `JUMP`, `GRAVITY` | `player/controller.ts` | Movement feel |
+| `UPHILL_DRAG`, `SLIDE`, `COYOTE`, `JUMP_BUFFER`, `JUMP_CUT` | `player/controller.ts` | How slopes and jumps feel |
+| `BOAT`, `BOAT_ACCEL`, `BOAT_BRAKE` | `player/controller.ts` | How the boat handles |
+| `CHAPTERS`, `LEADS` | `story/chapters.ts` | The chapter cards, and how people point the way |
+| `DEV_NOTES` | `story/notes.ts` | The developer's notes |
+| `KEEPSAKES`, `KEEPSAKE_TITLE` | `story/keepsakes.ts` | The six unsent messages, and where each one goes |
+| `APART` | `world/notes.ts` | How far apart notes and keepsakes are kept |
 | `VOICES`, `VOICE_GAIN` | `audio.ts` | Pitch and cadence of each age's murmur |
 | `DIST`, `LOOK_HEIGHT`, `SHOULDER` | `player/camera.ts` | How close and how over-the-shoulder the camera sits |
 | `RECENTRE_RATE`, `PLAY_PITCH` | `player/camera.ts` | How fast the view settles behind you, and the angle it holds |

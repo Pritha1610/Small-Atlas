@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { asset } from './world/assets';
 
 /**
  * Sound: four licensed lofi tracks, and an ocean nobody recorded.
@@ -171,7 +172,7 @@ export function createAudio(): Audio {
 
   function track(bed: Bed, i: number): HTMLAudioElement {
     if (!bed.players[i]) {
-      const el = new window.Audio(`./audio/${BEDS[bed.id][i].file}.mp3`);
+      const el = new window.Audio(asset(`audio/${BEDS[bed.id][i].file}.mp3`));
       // Streamed, not decoded into an AudioBuffer: a five-minute nocturne decodes to ~26MB of
       // float samples, and holding the whole set would cost most of a hundred megabytes of RAM.
       el.preload = 'none';
@@ -277,6 +278,13 @@ export function createAudio(): Audio {
     windGain.connect(muffle);
 
   }
+
+  // Switching apps on a phone keeps the tab alive, and the music with it - playing on in a
+  // pocket. Everything runs through the one context, so suspending it silences the lot.
+  document.addEventListener('visibilitychange', () => {
+    if (!ctx) return;
+    void (document.hidden ? ctx.suspend() : ctx.resume());
+  });
 
   return {
     get muted() {

@@ -71,17 +71,18 @@ export function tangentsOf(dir: THREE.Vector3): [THREE.Vector3, THREE.Vector3] {
   return [t1, dir.clone().cross(t1).normalize()];
 }
 
-/** Seats a clone on the surface, aligned to the radial up, with a random spin and optional tilt. */
+/** Seats a clone on the surface, aligned to the radial up, with a spin (random by default) and optional tilt. */
 export function place(
   proto: THREE.Object3D,
   dir: THREE.Vector3,
   point: THREE.Vector3,
-  tilt = 0
+  tilt = 0,
+  yaw = Math.random() * Math.PI * 2
 ): THREE.Object3D {
   const model = proto.clone(true);
   const quat = new THREE.Quaternion()
     .setFromUnitVectors(WORLD_UP, dir)
-    .multiply(new THREE.Quaternion().setFromAxisAngle(WORLD_UP, Math.random() * Math.PI * 2));
+    .multiply(new THREE.Quaternion().setFromAxisAngle(WORLD_UP, yaw));
   if (tilt > 0) {
     const [a] = tangentsOf(dir);
     quat.premultiply(new THREE.Quaternion().setFromAxisAngle(a, (Math.random() - 0.5) * tilt));
@@ -91,5 +92,43 @@ export function place(
   return model;
 }
 
+/** The `place` yaw that lays a model's long axis along `along`, a tangent at `dir`. */
+export function yawAlong(proto: THREE.Object3D, dir: THREE.Vector3, along: THREE.Vector3): number {
+  const size = new THREE.Box3().setFromObject(proto).getSize(new THREE.Vector3());
+  const align = new THREE.Quaternion().setFromUnitVectors(WORLD_UP, dir);
+  const ox = along.dot(new THREE.Vector3(1, 0, 0).applyQuaternion(align));
+  const oz = along.dot(new THREE.Vector3(0, 0, 1).applyQuaternion(align));
+  // A yaw of t turns local X to (cos t, 0, -sin t) and local Z to (sin t, 0, cos t).
+  return size.x >= size.z ? Math.atan2(-oz, ox) : Math.atan2(ox, oz);
+}
+
 /** Water sits at this radius; connectors and shore props key off it rather than the terrain. */
 export const WATER_RADIUS = PLANET_RADIUS + WATER_Y;
+
+/**
+ * Ground something solid already stands on, as a disc. Every placement pass - monuments,
+ * buildings, walkways, landmarks, caves, flora - checks this one list and adds to it, so nothing
+ * is ever seated inside something else. Before it, each pass only knew about its own kind:
+ * houses overlapped houses, crates spawned inside walls and a lighthouse could rise out of the
+ * Colosseum.
+ */
+export interface Footprint {
+  position: THREE.Vector3;
+  radius: number;
+}
+
+// ponytail: linear scan. ~1.5k discs against ~35k flora spots is ~50M distance checks at boot,
+// tens of milliseconds behind the title. Bucket by the flora chunk cells if that ever shows up.
+export function blocked(claimed: Footprint[], p: THREE.Vector3, r: number): boolean {
+  for (const f of claimed) {
+    const reach = f.radius + r;
+    if (f.position.distanceToSquared(p) < reach * reach) return true;
+  }
+  return false;
+}
+
+/** Horizontal half-extent of a model, for its footprint. */
+export function reachOf(model: THREE.Object3D): number {
+  const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+  return Math.max(size.x, size.z) / 2;
+}

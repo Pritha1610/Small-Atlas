@@ -64,6 +64,18 @@ const PLAY_PITCH = 0.16;
 const PITCH_MIN = -0.22;
 const PITCH_MAX = 1.25;
 
+/**
+ * Vertical FOV that keeps a portrait screen from becoming a slot. Three's FOV is vertical, so a
+ * phone held upright (aspect ~0.46) turned the play FOV of 55 into 27 degrees of horizontal
+ * view - tunnel vision. Widened by the square root of the squeeze, which lands near 75 on a
+ * phone: enough to see where you are walking, short of fisheye. Landscape is untouched.
+ */
+export function fitFov(base: number, aspect: number): number {
+  if (aspect >= 1) return base;
+  const half = THREE.MathUtils.degToRad(base / 2);
+  return THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(half) / Math.sqrt(aspect)));
+}
+
 export class CameraRig {
   yaw = 0.6;
   pitch = PLAY_PITCH;
@@ -145,7 +157,10 @@ export class CameraRig {
     const sp = Math.sin(this.pitch);
     const cy = Math.cos(this.yaw);
     const sy = Math.sin(this.yaw);
+    // Reset first. Accumulating into last frame's orbit averaged the two before normalising,
+    // a hidden one-frame lag whose strength depended on the frame rate.
     const orbit = this._orbit
+      .set(0, 0, 0)
       .addScaledVector(wRight, cp * sy)
       .addScaledVector(wRef, cp * cy)
       .addScaledVector(up, sp)

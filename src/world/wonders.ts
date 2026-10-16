@@ -4,18 +4,23 @@ import { PLANET_RADIUS, WATER_Y, sampleHeight, type Terrace } from './planet';
 import { loadModel, applyToonMaterial } from './assets';
 
 interface WonderSpec {
+  /** Key into the corpus (`wonder:Giza`, `capture:Giza`) and the album. Never shown. */
   name: string;
   path: string;
+  /** How it is written on screen. */
+  label: string;
+  /** How the people here would name it when pointing the way, per docs/STORY.md. */
+  known: string;
 }
 
 const WONDERS: WonderSpec[] = [
-  { name: 'Giza', path: '/models/Giza.glb' },
-  { name: 'ChichenItza', path: '/models/ChichenItza.glb' },
-  { name: 'Colosseum', path: '/models/Colosseum.glb' },
-  { name: 'GreatWall', path: '/models/GreatWall.glb' },
-  { name: 'MachuPicchu', path: '/models/MachuPicchu.glb' },
-  { name: 'Petra', path: '/models/Petra.glb' },
-  { name: 'TajMahal', path: '/models/TajMahal.glb' },
+  { name: 'Giza', path: '/models/Giza.glb', label: 'Giza', known: 'the flood markers at Giza' },
+  { name: 'ChichenItza', path: '/models/ChichenItza.glb', label: 'Chichen Itza', known: 'the calendar steps at Chichen Itza' },
+  { name: 'Colosseum', path: '/models/Colosseum.glb', label: 'the Colosseum', known: 'the old cistern they call the Colosseum' },
+  { name: 'GreatWall', path: '/models/GreatWall.glb', label: 'the Great Wall', known: 'the Wall, the dam that broke' },
+  { name: 'MachuPicchu', path: '/models/MachuPicchu.glb', label: 'Machu Picchu', known: 'the terraces at Machu Picchu' },
+  { name: 'Petra', path: '/models/Petra.glb', label: 'Petra', known: 'the carved city at Petra' },
+  { name: 'TajMahal', path: '/models/TajMahal.glb', label: 'the Taj Mahal', known: 'the Taj' },
 ];
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -115,7 +120,11 @@ function findClearDirection(seed: THREE.Vector3, spawnDir: THREE.Vector3): THREE
 
 export interface WonderSite {
   name: string;
+  label: string;
+  known: string;
   position: THREE.Vector3;
+  /** Half the scaled footprint, so nothing else is built inside the monument. */
+  radius: number;
 }
 
 export interface Wonders {
@@ -183,7 +192,8 @@ export async function createWonders(gradientMap: THREE.Texture, spawnDir: THREE.
     group.add(container);
 
     terraces.push({ dir: dir.clone(), angle: (span * scale) / 2 / PLANET_RADIUS });
-    sites.push({ name: WONDERS[i].name, position: pos.clone() });
+    const { name, label, known } = WONDERS[i];
+    sites.push({ name, label, known, position: pos.clone(), radius: (span * scale) / 2 });
 
     // Collide against the monument's real geometry, not a bounding box: a box walls the player
     // off in open ground and, once he steps inside it, backface culling makes it vanish. Real

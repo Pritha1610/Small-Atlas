@@ -1,5 +1,23 @@
 :root {
   color-scheme: dark;
+  /* One palette for every overlay. The HUD and the camera had drifted onto two oranges. */
+  --ink: #f4f1ea;
+  --ink-soft: #d6d3c8;
+  --ink-mute: #aeb6c2;
+  --accent: #f4a261;
+  --accent-hi: #ffb977;
+  --accent-ink: #241a10;
+  --sea: #cfe0e8;
+  --panel: rgba(10, 14, 24, 0.48);
+  --panel-strong: rgba(10, 14, 24, 0.74);
+  --line: rgba(255, 255, 255, 0.1);
+  --shadow-text: 0 1px 3px rgba(0, 0, 0, 0.55);
+  /* Notches and home bars. Zero everywhere else, so desktop layout is unchanged. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --edge: 20px;
 }
 
 * {
@@ -13,10 +31,16 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
   background: #0b1020;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    sans-serif;
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* A game, not a document: no text selection, no long-press callout, no grey tap flash. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #app,
@@ -27,68 +51,132 @@ body {
   touch-action: none;
 }
 
+button,
+a {
+  font: inherit;
+  color: inherit;
+}
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.7em;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-bottom-width: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: inherit;
+  font-size: 0.86em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+/* "running" / "walking", for a moment, when the run toggle flips. */
+#hud .flash-word {
+  position: absolute;
+  top: calc(18px + var(--safe-t));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+#hud .flash-word.on { opacity: 1; }
+/* On a phone the run button lights up itself, and up here it would sit on the title. */
+body.touch-ui #hud .flash-word { display: none; }
+
+/* Keyboard hints for keyboards, touch hints for thumbs. */
+.touch-only { display: none; }
+body.touch-ui .keys-only { display: none !important; }
+body.touch-ui .touch-only { display: revert; }
+
+/* ---------------------------------------------------------------- hud */
+
 #hud {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 10;
+  transition: opacity 0.7s ease;
 }
+/* The HUD is built while the title is still up, so it starts hidden and fades in with play. */
+#hud.pre-game { opacity: 0; }
 
 #hud .title {
   position: absolute;
-  top: 18px;
-  left: 20px;
-  color: #f4f1ea;
+  top: calc(18px + var(--safe-t));
+  left: calc(var(--edge) + var(--safe-l));
+  color: var(--ink);
   font-weight: 800;
   letter-spacing: 0.16em;
   font-size: 13px;
   text-transform: uppercase;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  text-shadow: var(--shadow-text);
 }
-
-#hud .title span {
-  color: #f4a261;
-}
+#hud .title span { color: var(--accent); }
 
 #hud .controls {
   position: absolute;
-  bottom: 18px;
-  left: 20px;
-  color: #d6d3c8;
+  bottom: calc(18px + var(--safe-b));
+  left: calc(var(--edge) + var(--safe-l));
+  /* Never runs under the minimap on a narrow window. */
+  max-width: calc(100% - 230px - var(--safe-l) - var(--safe-r));
+  color: var(--ink-soft);
   font-size: 12px;
-  line-height: 1.8;
-  padding: 10px 14px;
+  line-height: 1.5;
+  padding: 9px 14px;
   border-radius: 12px;
-  background: rgba(10, 14, 24, 0.45);
-  backdrop-filter: blur(6px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
   letter-spacing: 0.02em;
+  transition: opacity 0.3s ease;
 }
-
-#hud .controls b {
-  color: #fff;
-  font-weight: 700;
+#hud .controls .full {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
 }
+#hud .controls .full > span { white-space: nowrap; }
+#hud .controls .chip { display: none; }
+#hud .controls.folded { opacity: 0.7; padding: 6px 10px; }
+#hud .controls.folded .full { display: none; }
+#hud .controls.folded .chip { display: inline; }
 
 #hud .map {
   position: absolute;
-  bottom: 18px;
-  right: 20px;
+  bottom: calc(18px + var(--safe-b));
+  right: calc(var(--edge) + var(--safe-r));
   padding: 8px;
   border-radius: 14px;
-  background: rgba(10, 14, 24, 0.45);
-  backdrop-filter: blur(6px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
   text-align: center;
 }
-
-#hud .map canvas {
-  display: block;
-}
+#hud .map canvas { display: block; }
 
 #hud .found {
   margin-top: 6px;
-  color: #f4a261;
+  color: var(--accent);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -97,51 +185,65 @@ body {
 
 #hud .fps {
   position: absolute;
-  top: 18px;
-  right: 20px;
-  color: #aeb6c2;
+  top: calc(18px + var(--safe-t));
+  right: calc(var(--edge) + var(--safe-r));
+  color: var(--ink-mute);
   font-size: 12px;
   padding: 6px 10px;
   border-radius: 10px;
-  background: rgba(10, 14, 24, 0.45);
-  backdrop-filter: blur(6px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
   font-variant-numeric: tabular-nums;
 }
 
 #hud .prompt {
   position: absolute;
-  bottom: 118px;
+  bottom: calc(118px + var(--safe-b));
   left: 50%;
   transform: translateX(-50%);
-  color: #f4f1ea;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+  color: var(--ink);
   font-size: 13px;
   letter-spacing: 0.08em;
-  padding: 7px 14px;
+  padding: 6px 15px 6px 7px;
   border-radius: 999px;
-  background: rgba(10, 14, 24, 0.55);
+  background: rgba(10, 14, 24, 0.58);
   border: 1px solid rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   opacity: 0;
   transition: opacity 0.18s ease;
 }
 #hud .prompt.on { opacity: 1; }
-#hud .prompt::first-letter { color: #f4a261; font-weight: 700; }
+#hud .prompt kbd {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-ink);
+}
+/* While a line is up the prompt is just underneath it, saying what you already did. */
+#hud:has(.dialogue.on) .prompt { opacity: 0; }
 
 #hud .dialogue {
   position: absolute;
-  bottom: 96px;
+  bottom: calc(96px + var(--safe-b));
   left: 50%;
   transform: translate(-50%, 8px);
-  width: min(620px, 78vw);
+  /* Centred, so it needs the minimap's width of clearance on BOTH sides to never reach it. */
+  width: clamp(320px, calc(100vw - 440px), 620px);
   color: #f0ece2;
   font-size: 15px;
   line-height: 1.62;
   padding: 16px 20px;
   border-radius: 14px;
-  background: rgba(10, 14, 24, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
   backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.22s ease, transform 0.22s ease;
@@ -149,28 +251,211 @@ body {
 #hud .dialogue.on { opacity: 1; transform: translate(-50%, 0); }
 #hud .dialogue .who {
   display: block;
-  color: #f4a261;
+  color: var(--accent);
   font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   margin-bottom: 6px;
 }
-#hud .dialogue .place { font-style: italic; color: #cfe0e8; }
+#hud .dialogue .place { font-style: italic; color: var(--sea); }
+#hud .dialogue .line { display: block; }
+#hud .dialogue.fresh .line { animation: fresh 0.32s ease-out; }
+@keyframes fresh { from { opacity: 0; transform: translateY(5px); } }
+#hud .dialogue .more {
+  display: block;
+  margin-top: 6px;
+  text-align: right;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+#hud .dialogue .more kbd { margin-right: 6px; font-size: 10px; }
 
 #hud .murmur {
   position: absolute;
-  bottom: 168px;
+  bottom: calc(168px + var(--safe-b));
   left: 50%;
   transform: translateX(-50%);
-  color: rgba(233, 228, 216, 0.82);
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
+  text-align: center;
+  color: rgba(233, 228, 216, 0.86);
   font-size: 13px;
   font-style: italic;
   letter-spacing: 0.01em;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.65);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
   opacity: 0;
   transition: opacity 0.5s ease;
 }
 #hud .murmur.on { opacity: 1; }
+#hud .murmur .by {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  font-style: normal;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+/* A developer's note reads as paper, not as somebody in this world speaking. */
+#hud .dialogue.note {
+  background: #efe6cf;
+  color: #2b2418;
+  border-color: rgba(0, 0, 0, 0.18);
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-size: 16px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+#hud .dialogue.note .who { color: #8a5a2c; font-family: ui-sans-serif, system-ui, sans-serif; }
+#hud .dialogue .sig { display: block; margin-top: 8px; text-align: right; opacity: 0.7; }
+
+/* A keepsake: not paper and not speech. Something set down and meant, in a hand you never see. */
+#hud .dialogue.keepsake {
+  background: rgba(34, 14, 20, 0.84);
+  border-color: rgba(232, 128, 150, 0.32);
+  color: #f3e3e4;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-size: 16px;
+  font-style: italic;
+  line-height: 1.7;
+}
+#hud .dialogue.keepsake .who {
+  color: #e8889b;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-style: normal;
+}
+
+/* Over the head of whoever E would talk to, so "Talk to Meera" has a Meera. Positioned from JS;
+   the bob lives on the arrow so the two transforms do not fight. */
+#hud .marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+#hud .marker.on { opacity: 1; }
+#hud .marker::after {
+  content: "";
+  position: absolute;
+  left: -7px;
+  top: -12px;
+  border: 7px solid transparent;
+  border-top: 10px solid var(--accent);
+  border-bottom: 0;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  animation: bob 1.4s ease-in-out infinite;
+}
+@keyframes bob { 50% { transform: translateY(-5px); } }
+
+/* Where the story is, and what to do about it. */
+#hud .thread {
+  position: absolute;
+  top: calc(42px + var(--safe-t));
+  left: calc(var(--edge) + var(--safe-l));
+  display: grid;
+  gap: 2px;
+  max-width: min(380px, calc(100vw - 230px));
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+#hud .thread b {
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* A new stage of the story, announced once. */
+#hud .chapter {
+  position: absolute;
+  /* Below the title, the story line and the track badge, whatever the window height. */
+  top: max(24%, calc(124px + var(--safe-t)));
+  left: 50%;
+  transform: translate(-50%, 6px);
+  width: min(560px, calc(100vw - 40px));
+  text-align: center;
+  color: var(--ink);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9), 0 4px 18px rgba(0, 0, 0, 0.7);
+  opacity: 0;
+  transition: opacity 0.9s ease, transform 0.9s ease;
+}
+#hud .chapter.on { opacity: 1; transform: translate(-50%, 0); }
+#hud .chapter small {
+  display: block;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+}
+#hud .chapter h2 {
+  margin-top: 6px;
+  font-size: clamp(22px, 4vw, 34px);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+#hud .chapter p {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.7;
+  font-style: italic;
+  opacity: 0.92;
+  text-wrap: balance;
+}
+
+.audio-badge {
+  position: absolute;
+  top: calc(96px + var(--safe-t));
+  left: calc(22px + var(--safe-l));
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: lowercase;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  text-shadow: var(--shadow-text);
+  pointer-events: none;
+}
+.audio-badge.on { opacity: 0.8; }
+
+#hud .loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+#hud .loading i {
+  display: block;
+  width: 180px;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+#hud .loading b {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+/* ---------------------------------------------------------------- title */
 
 #title {
   position: fixed;
@@ -179,6 +464,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: calc(24px + var(--safe-t)) calc(20px + var(--safe-r)) calc(24px + var(--safe-b)) calc(20px + var(--safe-l));
   text-align: center;
   /* Only a soft vignette: the planet behind it is the artwork, so the overlay must not cover it. */
   background: radial-gradient(ellipse at center, rgba(8, 12, 22, 0) 30%, rgba(8, 12, 22, 0.62) 100%);
@@ -190,9 +476,11 @@ body {
 #title h1 {
   margin: 0;
   color: #f7f4ec;
-  font-size: clamp(38px, 7vw, 86px);
+  font-size: clamp(34px, 7vw, 86px);
   font-weight: 800;
   letter-spacing: 0.2em;
+  /* Letter-spacing trails after the last glyph too, which pushes the word off centre. */
+  margin-right: -0.2em;
   line-height: 1;
   text-transform: uppercase;
   text-shadow: 0 4px 26px rgba(0, 0, 0, 0.65);
@@ -200,8 +488,8 @@ body {
 #title h1 span {
   display: block;
   margin-top: 10px;
-  color: #f4a261;
-  font-size: 0.26em;
+  color: var(--accent);
+  font-size: max(0.26em, 11px);
   letter-spacing: 0.42em;
 }
 
@@ -217,22 +505,20 @@ body {
 
 #title .begin {
   margin-top: 34px;
-  padding: 13px 46px;
-  font: inherit;
+  padding: 14px 48px;
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: #241a10;
-  background: #f4a261;
+  color: var(--accent-ink);
+  background: var(--accent);
   border: none;
   border-radius: 999px;
   cursor: pointer;
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.4);
   transition: transform 0.18s ease, background 0.18s ease;
 }
-#title .begin:hover { background: #ffb977; transform: translateY(-2px); }
-#title .begin:active { transform: translateY(0); }
+#title .begin:active { transform: translateY(1px); }
 
 #title .hint {
   margin: 20px 0 0;
@@ -240,12 +526,9 @@ body {
   font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+  text-wrap: balance;
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95);
 }
-
-/* The HUD is built while the title is still up, so it starts hidden and fades in with play. */
-#hud.pre-game { opacity: 0; }
-#hud { transition: opacity 0.7s ease; }
 
 #flash {
   position: fixed;
@@ -257,72 +540,293 @@ body {
 }
 #flash.on { opacity: 1; }
 
-
 /* ---------------------------------------------------------------- camera */
 
 .viewfinder { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .18s ease; }
 .viewfinder.on { opacity: 1; }
 .vf-bar { position: absolute; left: 0; right: 0; height: 11%; background: #0b0d10; }
-.vf-bar.top { top: 0; } .vf-bar.bottom { bottom: 0; }
+.vf-bar.top { top: 0; }
+.vf-bar.bottom { bottom: 0; }
 .vf-frame { position: absolute; inset: 13% 8%; }
-.vf-frame i { position: absolute; width: 26px; height: 26px; border: 2px solid rgba(244,241,234,.72); }
+.vf-frame i { position: absolute; width: 26px; height: 26px; border: 2px solid rgba(244, 241, 234, .72); }
 .vf-frame .tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
 .vf-frame .tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
 .vf-frame .bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
 .vf-frame .br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
-.vf-info { position: absolute; bottom: 3.4%; left: 0; right: 0; display: flex; justify-content: center;
-  gap: 18px; align-items: baseline; color: #f4f1ea; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; }
-.vf-film { color: #f0a860; font-weight: 700; }
+.vf-info {
+  position: absolute; bottom: calc(3.4% + var(--safe-b) * 0.5); left: 0; right: 0;
+  display: flex; justify-content: center; gap: 18px; align-items: baseline;
+  color: var(--ink); font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+}
+.vf-film { color: var(--accent); font-weight: 700; }
 .vf-hint { opacity: .5; letter-spacing: .1em; }
-.vf-subject { position: absolute; top: 14.5%; left: 0; right: 0; text-align: center; color: #f0a860;
-  font-size: 15px; letter-spacing: .22em; text-transform: uppercase; opacity: 0; transition: opacity .2s ease; }
+.vf-subject {
+  position: absolute; top: 14.5%; left: 0; right: 0; text-align: center; color: var(--accent);
+  font-size: 15px; letter-spacing: .22em; text-transform: uppercase; opacity: 0; transition: opacity .2s ease;
+}
 .vf-subject.on { opacity: 1; }
-#hud.aiming .title, #hud.aiming .controls, #hud.aiming .map, #hud.aiming .prompt, #hud.aiming .murmur { opacity: 0; }
+#hud.aiming .title,
+#hud.aiming .controls,
+#hud.aiming .map,
+#hud.aiming .prompt,
+#hud.aiming .murmur,
+#hud.aiming .marker,
+#hud.aiming .thread,
+#hud.aiming .chapter,
+#hud.aiming .fps { opacity: 0; }
 
 .shutter-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
 .shutter-flash.on { animation: shutter .42s ease-out; }
 @keyframes shutter { 0% { opacity: 0; } 8% { opacity: .85; } 100% { opacity: 0; } }
 
-.photo-toast { position: absolute; left: 50%; bottom: 15%; transform: translate(-50%, 8px);
-  max-width: 620px; padding: 14px 20px; border-radius: 10px; background: rgba(16,18,22,.9);
-  color: #f4f1ea; opacity: 0; pointer-events: none; transition: opacity .3s ease, transform .3s ease; }
+.photo-toast {
+  position: absolute; left: 50%; bottom: calc(15% + var(--safe-b)); transform: translate(-50%, 8px);
+  width: max-content; max-width: min(620px, calc(100vw - 32px)); padding: 14px 20px; border-radius: 12px;
+  background: rgba(16, 18, 22, .9); border: 1px solid var(--line);
+  color: var(--ink); opacity: 0; pointer-events: none; transition: opacity .3s ease, transform .3s ease;
+}
 .photo-toast.on { opacity: 1; transform: translate(-50%, 0); }
-.photo-toast b { display: block; color: #f0a860; font-size: 13px; letter-spacing: .2em; text-transform: uppercase; }
+.photo-toast b { display: block; color: var(--accent); font-size: 13px; letter-spacing: .2em; text-transform: uppercase; }
 .photo-toast span { display: block; margin-top: 8px; font-size: 15px; line-height: 1.5; font-style: italic; }
 
 /* ---------------------------------------------------------------- album */
 
-.gallery { position: fixed; inset: 0; z-index: 40; overflow-y: auto; padding: 32px 40px 80px;
-  background: #12141a; color: #f4f1ea; display: none; }
+.gallery {
+  position: fixed; inset: 0; z-index: 40; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 0 calc(40px + var(--safe-r)) calc(80px + var(--safe-b)) calc(40px + var(--safe-l));
+  background: #12141a; color: var(--ink); display: none;
+}
 .gallery.on { display: block; }
-.gal-head { display: flex; align-items: baseline; gap: 18px; margin-bottom: 26px; }
+/* Sticks while scrolling a long album, so Close is never a scroll away. */
+.gal-head {
+  position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 18px;
+  margin: 0 -8px 22px; padding: calc(28px + var(--safe-t)) 8px 14px; background: #12141a;
+}
 .gal-head h2 { font-size: 20px; letter-spacing: .26em; text-transform: uppercase; margin: 0; }
 .gal-count { opacity: .45; font-size: 12px; letter-spacing: .12em; }
-.gal-close { margin-left: auto; background: #f0a860; border: 0; color: #12141a; font-weight: 700;
-  padding: 9px 20px; border-radius: 999px; letter-spacing: .16em; text-transform: uppercase;
-  font-size: 11px; cursor: pointer; }
+.gal-close {
+  margin-left: auto; background: var(--accent); border: 0; color: #12141a; font-weight: 700;
+  padding: 10px 22px; border-radius: 999px; letter-spacing: .16em; text-transform: uppercase;
+  font-size: 11px; cursor: pointer;
+}
 .gal-empty { opacity: .6; max-width: 44ch; line-height: 1.7; }
 .gallery section { margin-bottom: 34px; }
-.gallery h3 { font-size: 12px; letter-spacing: .2em; text-transform: uppercase; opacity: .8;
-  border-bottom: 1px solid rgba(244,241,234,.12); padding-bottom: 8px; margin: 0 0 16px; }
+.gallery h3 {
+  font-size: 12px; letter-spacing: .2em; text-transform: uppercase; opacity: .8;
+  border-bottom: 1px solid rgba(244, 241, 234, .12); padding-bottom: 8px; margin: 0 0 16px;
+}
 .gallery h3 em { font-style: normal; opacity: .4; letter-spacing: .1em; text-transform: none; }
 .gallery .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
 .shot { margin: 0; cursor: pointer; }
-.shot img { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 4px; display: block;
-  transition: transform .15s ease; }
-.shot:hover img { transform: scale(1.02); }
+.shot img {
+  width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 4px; display: block;
+  background: #1b1e26; transition: transform .15s ease;
+}
 .shot figcaption { margin-top: 6px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; opacity: .5; }
-.gal-view { position: fixed; inset: 0; background: rgba(8,9,12,.94); display: none; z-index: 41;
-  flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 40px; }
+.gal-view {
+  position: fixed; inset: 0; background: rgba(8, 9, 12, .95); display: none; z-index: 41;
+  flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  padding: calc(40px + var(--safe-t)) calc(24px + var(--safe-r)) calc(40px + var(--safe-b)) calc(24px + var(--safe-l));
+}
 .gal-view.on { display: flex; }
 .gal-view img { max-width: min(1100px, 92vw); max-height: 68vh; border-radius: 5px; }
 .gal-cap { max-width: 70ch; text-align: center; font-size: 16px; line-height: 1.65; font-style: italic; }
-.gal-cap span { display: block; margin-top: 12px; font-size: 11px; font-style: normal; opacity: .45;
-  letter-spacing: .16em; text-transform: uppercase; }
-.gal-del { background: none; border: 1px solid rgba(244,241,234,.28); color: #f4f1ea; padding: 8px 18px;
-  border-radius: 999px; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; cursor: pointer; }
+.gal-cap span {
+  display: block; margin-top: 12px; font-size: 11px; font-style: normal; opacity: .45;
+  letter-spacing: .16em; text-transform: uppercase;
+}
+.gal-actions { display: flex; gap: 10px; }
+.gal-del,
+.gal-save {
+  background: none; border: 1px solid rgba(244, 241, 234, .28); color: var(--ink); padding: 9px 20px;
+  border-radius: 999px; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; cursor: pointer;
+  text-decoration: none;
+}
 
-.audio-badge { position: absolute; top: 62px; left: 22px; color: #f4f1ea; font-size: 12px;
-  letter-spacing: .16em; text-transform: lowercase; opacity: 0; transition: opacity .4s ease;
-  text-shadow: 0 1px 3px rgba(0,0,0,.5); pointer-events: none; }
-.audio-badge.on { opacity: .8; }
+@media (hover: hover) {
+  #title .begin:hover { background: var(--accent-hi); transform: translateY(-2px); }
+  .shot:hover img { transform: scale(1.02); }
+  .gal-del:hover,
+  .gal-save:hover { border-color: rgba(244, 241, 234, .6); }
+}
+
+/* ---------------------------------------------------------------- touch */
+
+.touch { display: none; }
+body.touch-ui .touch { display: block; }
+.touch,
+.touch * { touch-action: none; }
+
+/* The stick appears wherever the thumb lands in here, so the zone is generous. */
+.touch .stick-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 46%;
+  height: 58%;
+  pointer-events: auto;
+}
+.touch .stick {
+  position: absolute;
+  left: calc(32px + var(--safe-l));
+  bottom: calc(32px + var(--safe-b));
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: rgba(10, 14, 24, 0.32);
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+.touch .stick.on { opacity: 1; }
+.touch .stick i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  border-radius: 50%;
+  background: rgba(244, 241, 234, 0.82);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.touch .buttons {
+  position: absolute;
+  right: calc(16px + var(--safe-r));
+  bottom: calc(16px + var(--safe-b));
+  display: grid;
+  grid-template-columns: auto 76px;
+  grid-template-rows: 48px auto;
+  gap: 10px;
+  align-items: end;
+}
+.touch .small {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: end;
+  display: grid;
+  grid-template-columns: 48px 48px;
+  gap: 10px;
+}
+/* Run sits over jump, where the thumb already is. Lit while it is on. */
+.touch button.run { grid-column: 2; grid-row: 1; justify-self: center; }
+.touch button.run.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.touch button {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 14, 24, 0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: var(--ink);
+  pointer-events: auto;
+  transition: transform 0.08s ease, background 0.08s ease;
+}
+.touch button:active { transform: scale(0.92); background: rgba(244, 162, 97, 0.35); }
+.touch button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.touch button.big {
+  grid-column: 2;
+  grid-row: 2;
+  width: 76px;
+  height: 76px;
+  background: rgba(244, 241, 234, 0.16);
+}
+.touch button.big svg { width: 30px; height: 30px; stroke-width: 2.4; }
+.touch .aim-only { display: none; }
+#hud.aiming .touch .aim-only { display: grid; }
+#hud.aiming .touch .play-only { display: none; }
+
+body.touch-ui #hud .title { font-size: 11px; top: calc(14px + var(--safe-t)); left: calc(14px + var(--safe-l)); }
+body.touch-ui .audio-badge { top: calc(78px + var(--safe-t)); left: calc(15px + var(--safe-l)); }
+body.touch-ui #hud .thread {
+  top: calc(32px + var(--safe-t));
+  left: calc(14px + var(--safe-l));
+  max-width: calc(100vw - 150px - var(--safe-l) - var(--safe-r));
+  font-size: 11.5px;
+}
+body.touch-ui #hud .chapter p { font-size: 13px; line-height: 1.55; }
+/* The bottom corners belong to thumbs, so the map moves up out of the way. */
+body.touch-ui #hud .map {
+  top: calc(12px + var(--safe-t));
+  right: calc(12px + var(--safe-r));
+  bottom: auto;
+  padding: 6px;
+  border-radius: 12px;
+}
+body.touch-ui #hud .map canvas { width: 92px; height: 92px; }
+body.touch-ui #hud .found { font-size: 10px; margin-top: 4px; }
+/* Raised clear of the controls, and tappable: the prompt talks, the open line moves on. */
+/* The button cluster is 150px tall (run over jump, beside the small four), so the text that
+   shares the bottom of the screen with it starts above that. */
+body.touch-ui #hud .prompt {
+  bottom: calc(166px + var(--safe-b));
+  z-index: 2;
+  padding: 9px 18px 9px 9px;
+  font-size: 14px;
+}
+body.touch-ui #hud .prompt.on { pointer-events: auto; }
+body.touch-ui #hud .prompt kbd { display: none; }
+body.touch-ui #hud .dialogue {
+  bottom: calc(162px + var(--safe-b));
+  width: min(560px, calc(100vw - 24px - var(--safe-l) - var(--safe-r)));
+  z-index: 2;
+  font-size: 14px;
+  padding: 14px 16px;
+}
+body.touch-ui #hud .dialogue.on { pointer-events: auto; }
+body.touch-ui #hud .murmur { bottom: calc(214px + var(--safe-b)); }
+body.touch-ui .photo-toast { bottom: calc(150px + var(--safe-b)); }
+/* The bottom bar is under the thumbs, so the film and hint move to the top one. */
+body.touch-ui .vf-info { top: calc(3.4% + var(--safe-t)); bottom: auto; }
+
+/* ---------------------------------------------------------------- small screens */
+
+@media (max-width: 640px) {
+  :root { --edge: 14px; }
+  #title .tagline { font-size: 13px; line-height: 1.75; }
+  #title .begin { margin-top: 28px; }
+  .gallery { padding-left: calc(16px + var(--safe-l)); padding-right: calc(16px + var(--safe-r)); }
+  .gal-head { gap: 12px; padding-top: calc(18px + var(--safe-t)); }
+  .gal-head h2 { font-size: 16px; letter-spacing: .2em; }
+  .gallery .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .gal-cap { font-size: 14px; }
+  .vf-info { gap: 12px; font-size: 11px; }
+}
+
+/* A phone on its side is only ~390px tall; the stacked bottom lines need pulling down. */
+@media (max-height: 460px) {
+  #title .tagline { margin-top: 16px; line-height: 1.6; }
+  #title .begin { margin-top: 20px; }
+  #title .hint { margin-top: 14px; }
+  .gal-view { gap: 10px; padding-top: calc(14px + var(--safe-t)); padding-bottom: calc(14px + var(--safe-b)); }
+  .gal-view img { max-height: 55vh; }
+  .gal-cap { font-size: 14px; line-height: 1.45; }
+  .gal-cap span { margin-top: 6px; }
+  body.touch-ui #hud .dialogue { line-height: 1.5; }
+  #hud .chapter h2 { font-size: 20px; }
+  #hud .chapter p { margin-top: 6px; font-size: 12.5px; line-height: 1.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Fades stay - the white bloom especially, since cutting it would be a hard flash instead -
+     but nothing slides and the shutter does not strobe. */
+  #hud .dialogue,
+  #hud .dialogue.on,
+  .photo-toast,
+  .photo-toast.on { transition: opacity .2s ease; transform: translate(-50%, 0); }
+  .shutter-flash.on { animation: none; }
+  #hud .marker::after { animation: none; }
+  #hud .dialogue.fresh .line { animation: none; }
+}

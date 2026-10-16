@@ -21,7 +21,8 @@ export function createTitle(): Title {
       <h1>wonders<span>of the world</span></h1>
       <p class="tagline">The sea has been rising for six generations.<br>Someone should see what is left.</p>
       <button class="begin" type="button">Begin</button>
-      <p class="hint">WASD move &middot; Shift run &middot; E talk</p>
+      <p class="hint keys-only">WASD move &middot; Shift run &middot; E talk</p>
+      <p class="hint touch-only">Thumb to walk &middot; &raquo; to run</p>
     </div>
   `;
   document.body.appendChild(el);

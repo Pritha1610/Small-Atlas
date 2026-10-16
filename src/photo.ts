@@ -157,6 +157,8 @@ export interface PhotoDeps {
   caveSites: THREE.Vector3[];
   dialogue: Dialogue;
   playFov: number;
+  /** Sets the base FOV; the owner fits it to the screen's aspect. */
+  setFov(fov: number): void;
   stage(): number;
   /** Raised so the caption can say where you were standing. */
   feet(): THREE.Vector3;
@@ -195,7 +197,7 @@ export async function createPhotos(deps: PhotoDeps): Promise<Photos> {
     <div class="vf-bar top"></div>
     <div class="vf-bar bottom"></div>
     <div class="vf-frame"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div>
-    <div class="vf-info"><span class="vf-film"></span><span class="vf-hint">drag to aim · click shutter · Tab film · F lower</span></div>
+    <div class="vf-info"><span class="vf-film"></span><span class="vf-hint keys-only">drag to aim · click or Enter shutter · Tab film · F lower</span><span class="vf-hint touch-only">drag to aim · tap to shoot</span></div>
     <div class="vf-subject"></div>
   `;
   hud.appendChild(view);
@@ -361,10 +363,13 @@ export async function createPhotos(deps: PhotoDeps): Promise<Photos> {
     return { data: c.toDataURL('image/jpeg', JPEG_QUALITY), thumb: thumbnail(c), w, h };
   }
 
+  let toastTimer = 0;
   function showToast(title: string, body: string): void {
     toast.innerHTML = `<b>${title}</b>${body ? `<span>${body}</span>` : ''}`;
     toast.classList.add('on');
-    window.setTimeout(() => toast.classList.remove('on'), body ? 9000 : 3200);
+    // Replaced, not stacked: a second shot used to be hidden early by the first one's timer.
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => toast.classList.remove('on'), body ? 9000 : 3200);
   }
 
   async function capture(): Promise<void> {
@@ -379,7 +384,7 @@ export async function createPhotos(deps: PhotoDeps): Promise<Photos> {
 
     if (wonder) {
       subject = `wonder:${wonder.name}`;
-      title = wonder.name;
+      title = wonder.label;
       // The capture lore is written per wonder and per stage, so the same monument tells you
       // more the second time you photograph it, once you have seen more of the world.
       body =
@@ -430,12 +435,19 @@ export async function createPhotos(deps: PhotoDeps): Promise<Photos> {
 
   // ---------------------------------------------------------------- gallery
 
+  /** 'wonder:ChichenItza' -> 'Chichen Itza', 'place:cave' -> 'cave'. */
+  function subjectName(subject: string | null): string {
+    if (!subject) return 'Unrecorded';
+    const key = subject.split(':').pop()!;
+    return deps.wonderSites.find((w) => w.name === key)?.label ?? key;
+  }
+
   function renderGallery(): void {
     if (photos.length === 0) {
       gallery.innerHTML = `
         <div class="gal-head"><h2>The Album</h2><button class="gal-close">Close</button></div>
-        <p class="gal-empty">Nothing recorded yet. Raise the camera with <b>F</b> and photograph
-        something before this world is gone.</p>`;
+        <p class="gal-empty">Nothing recorded yet. Raise the camera<span class="keys-only"> with <b>F</b></span>
+        and photograph something before this world is gone.</p>`;
     } else {
       const byWorld = new Map<number, Photo[]>();
       for (const p of photos) {
@@ -453,7 +465,7 @@ export async function createPhotos(deps: PhotoDeps): Promise<Photos> {
               (p) => `
               <figure class="shot" data-id="${p.id}">
                 <img src="${p.thumb ?? p.data}" alt="" loading="lazy">
-                <figcaption>${p.subject ? p.subject.split(':').pop() : 'Unrecorded'}</figcaption>
+                <figcaption>${subjectName(p.subject)}</figcaption>
               </figure>`
             )
             .join('');
@@ -471,7 +483,9 @@ export async function createPhotos(deps: PhotoDeps): Promise<Photos> {
           <button class="gal-close">Close</button>
         </div>
         ${sections}
-        <div class="gal-view"><img><div class="gal-cap"></div><button class="gal-del">Discard</button></div>`;
+        <div class="gal-view"><img alt=""><div class="gal-cap"></div>
+          <div class="gal-actions"><a class="gal-save" download>Save</a><button class="gal-del">Discard</button></div>
+        </div>`;
     }
 
     gallery.querySelector('.gal-close')?.addEventListener('click', () => toggleGallery());
@@ -484,6 +498,9 @@ export async function createPhotos(deps: PhotoDeps): Promise<Photos> {
         if (!p || !viewer) return;
         openId = p.id;
         (viewer.querySelector('img') as HTMLImageElement).src = p.data;
+        const save = viewer.querySelector('.gal-save') as HTMLAnchorElement;
+        save.href = p.data;
+        save.download = `world-${p.world}-${p.subject?.split(':').pop() ?? 'photograph'}.jpg`;
         const when = new Date(p.at);
         (viewer.querySelector('.gal-cap') as HTMLElement).innerHTML =
           `${p.caption}<span>World ${p.world} · ${FILMS.find((f) => f.id === p.film)?.name ?? p.film} · ${when.toLocaleDateString()}</span>`;
@@ -523,12 +540,30 @@ export async function createPhotos(deps: PhotoDeps): Promise<Photos> {
     aiming = !aiming;
     view.classList.toggle('on', aiming);
     hud.classList.toggle('aiming', aiming);
-    deps.camera.fov = aiming ? PHOTO_FOV : deps.playFov;
-    deps.camera.updateProjectionMatrix();
+    deps.setFov(aiming ? PHOTO_FOV : deps.playFov);
   }
 
-  deps.renderer.domElement.addEventListener('click', () => {
+  // A drag to aim ends in a click too, so every reframing used to fire the shutter. Only a
+  // press that stayed put is a shot.
+  const canvas = deps.renderer.domElement;
+  let downX = 0;
+  let downY = 0;
+  canvas.addEventListener('pointerdown', (e) => {
+    downX = e.clientX;
+    downY = e.clientY;
+  });
+  canvas.addEventListener('click', (e) => {
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 8) return;
     if (aiming && !galleryOpen) shoot();
+  });
+
+  // Escape backs out one layer at a time: the open photograph, then the album, then the camera.
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'Escape') return;
+    const viewer = gallery.querySelector('.gal-view.on');
+    if (viewer) viewer.classList.remove('on');
+    else if (galleryOpen) toggleGallery();
+    else if (aiming) toggleAim();
   });
 
   function shoot(): void {
@@ -566,7 +601,7 @@ export async function createPhotos(deps: PhotoDeps): Promise<Photos> {
       }
       if (aiming) {
         const w = framedWonder();
-        subjectLabel.textContent = w ? w.name : '';
+        subjectLabel.textContent = w ? w.label : '';
         subjectLabel.classList.toggle('on', !!w);
       }
     },

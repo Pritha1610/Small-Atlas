@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { PLANET_RADIUS, WATER_Y } from './planet';
 import { applyWind } from '../render/wind';
 import { loadModel } from './assets';
+import { blocked, type Footprint } from './dressing';
 
 // Real tree models are ~2,400 triangles against the 56 of the old cylinder-and-blob, so the
 // count comes down hard. Chunked culling means only the ~2% over the horizon is ever drawn, but
@@ -17,6 +18,8 @@ const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 export interface Props {
   group: THREE.Group;
+  /** Tree trunks, so you walk round a tree instead of through it. Bushes and grass stay soft. */
+  collisionMesh: THREE.Mesh;
 }
 
 /**
@@ -35,6 +38,19 @@ export interface Clearing {
    * through - which grew a tree inside a cave chamber. Anything with an interior needs a core.
    */
   core?: number;
+}
+
+/** Solid things plants must not grow through. */
+export interface Blockers {
+  /** Buildings, walkways, landmarks, crates: nothing grows inside these discs. */
+  footprints: Footprint[];
+  /**
+   * Monuments are tested against their real geometry instead. A disc would bare the whole
+   * approach, which the clearings deliberately keep green; the problem was only ever trees
+   * growing up through a pyramid and grass poking through the Taj Mahal's plinth.
+   */
+  monuments: Footprint[];
+  monumentMesh: THREE.Object3D;
 }
 
 /** Probability a plant survives at this point, given every clearing near it. */
@@ -102,7 +118,8 @@ function scatter(
   minH: number,
   maxH: number,
   minFlat: number,
-  clearings: Clearing[]
+  clearings: Clearing[],
+  free: (pos: THREE.Vector3, up: THREE.Vector3) => boolean
 ): Spot[] {
   const spots: Spot[] = [];
   const pos = new THREE.Vector3();
@@ -115,6 +132,7 @@ function scatter(
     const up = pos.clone().normalize();
     if (normal.dot(up) < minFlat) continue;
     if (Math.random() > densityAt(pos, clearings)) continue;
+    if (!free(pos, up)) continue;
     spots.push({ pos: pos.clone(), up });
   }
   return spots;
@@ -202,10 +220,28 @@ function partition(spots: Spot[], cells: THREE.Vector3[]): Spot[][] {
 export async function createProps(
   gradientMap: THREE.Texture,
   planetMesh: THREE.Mesh,
-  clearings: Clearing[] = []
+  clearings: Clearing[] = [],
+  blockers: Blockers = { footprints: [], monuments: [], monumentMesh: new THREE.Object3D() }
 ): Promise<Props> {
   const group = new THREE.Group();
   const sampler = new MeshSurfaceSampler(planetMesh).build();
+
+  // Measured before this: ~50 trees and ~2,600 grass tufts per world grew inside a building.
+  const ray = new THREE.Raycaster();
+  ray.firstHitOnly = true;
+  const from = new THREE.Vector3();
+  const down = new THREE.Vector3();
+  const ROOF_PROBE = 45;
+  const freeOf = (reach: number) => (pos: THREE.Vector3, up: THREE.Vector3): boolean => {
+    if (blocked(blockers.footprints, pos, reach)) return false;
+    // Only spots inside a monument's disc pay for a ray; anything there is under it if the ray
+    // down from above meets the monument before it meets this patch of ground.
+    if (!blocked(blockers.monuments, pos, 0)) return true;
+    ray.set(from.copy(pos).addScaledVector(up, ROOF_PROBE), down.copy(up).negate());
+    ray.near = 0;
+    ray.far = ROOF_PROBE - 0.05;
+    return ray.intersectObject(blockers.monumentMesh, false).length === 0;
+  };
 
   // Trees are cleared hardest - nobody leaves a canopy over their roof - while grass creeps
   // back in, so it keeps a higher floor and a tighter radius than the trees do.
@@ -222,9 +258,10 @@ export async function createProps(
     // creeping back is a nice idea on a village green and a wrong one through solid rock.
     core: c.core,
   }));
-  const trees = scatter(sampler, TREE_COUNT, WATER_Y + 2.4, 17, 0.86, treeClear);
-  const bushes = scatter(sampler, BUSH_COUNT, WATER_Y + 1.2, 19, 0.82, grassClear);
-  const grass = scatter(sampler, GRASS_COUNT, WATER_Y + 0.6, 17, 0.8, grassClear);
+  // Reach is roughly each plant's own spread, so a canopy does not grow through an eave.
+  const trees = scatter(sampler, TREE_COUNT, WATER_Y + 2.4, 17, 0.86, treeClear, freeOf(1.2));
+  const bushes = scatter(sampler, BUSH_COUNT, WATER_Y + 1.2, 19, 0.82, grassClear, freeOf(0.5));
+  const grass = scatter(sampler, GRASS_COUNT, WATER_Y + 0.6, 17, 0.8, grassClear, freeOf(0.15));
 
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
@@ -261,7 +298,8 @@ export async function createProps(
     variants: THREE.BufferGeometry[],
     minHeight: number,
     range: number,
-    sink: number
+    sink: number,
+    trunks?: THREE.BufferGeometry[]
   ): void {
     if (variants.length === 0) return;
     partition(spots, cells).forEach((bucket) => {
@@ -277,7 +315,8 @@ export async function createProps(
         const nativeH = Math.max(geo.boundingBox!.max.y, 0.001);
         const mesh = new THREE.InstancedMesh(geo, floraMat, list.length);
         list.forEach((sp, i) => {
-          const sc = (minHeight + Math.random() * range) / nativeH;
+          const tall = minHeight + Math.random() * range;
+          const sc = tall / nativeH;
           q.setFromUnitVectors(WORLD_UP, sp.up);
           q.multiply(
             new THREE.Quaternion().setFromAxisAngle(WORLD_UP, Math.random() * Math.PI * 2)
@@ -286,6 +325,18 @@ export async function createProps(
           // Sunk slightly so the base never floats on the faceted ground.
           m.compose(sp.pos.clone().addScaledVector(sp.up, -sink), q, scale);
           mesh.setMatrixAt(i, m);
+          if (trunks) {
+            // A plain cylinder up the lower trunk, thicker on bigger trees. Only the part you
+            // could walk into matters; the canopy is overhead.
+            const r = THREE.MathUtils.clamp(tall * 0.055, 0.16, 0.38);
+            const h = Math.min(2.6, tall * 0.45);
+            const trunk = new THREE.CylinderGeometry(r, r * 1.15, h, 7, 1, true);
+            trunk.translate(0, h / 2 - sink, 0);
+            trunk.applyMatrix4(trunkM.compose(sp.pos, q, unit));
+            trunk.deleteAttribute('normal');
+            trunk.deleteAttribute('uv');
+            trunks.push(trunk);
+          }
         });
         mesh.instanceMatrix.needsUpdate = true;
         // Without this the bounding sphere covers only the source geometry at the origin and
@@ -296,7 +347,10 @@ export async function createProps(
     });
   }
 
-  plant(trees, treeGeoms, 3.9, 3.9, 0.15);
+  const trunks: THREE.BufferGeometry[] = [];
+  const trunkM = new THREE.Matrix4();
+  const unit = new THREE.Vector3(1, 1, 1);
+  plant(trees, treeGeoms, 3.9, 3.9, 0.15, trunks);
   // Knee-to-waist on a 1.65 player, with the tall end reaching her shoulder.
   plant(bushes, bushGeoms, 0.5, 0.7, 0.1);
 
@@ -341,5 +395,11 @@ export async function createProps(
     group.add(grassMesh);
   });
 
-  return { group };
+  const merged = trunks.length > 0 ? mergeGeometries(trunks, false) : null;
+  const collisionMesh = new THREE.Mesh(merged ?? new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+  if (merged) collisionMesh.geometry.computeBoundsTree();
+  collisionMesh.visible = false;
+  group.add(collisionMesh);
+
+  return { group, collisionMesh };
 }

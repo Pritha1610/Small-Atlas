@@ -41,20 +41,52 @@ interface Speaker {
   band: Band;
 }
 
+/** What one speaker (or one place) has already said, and the very last thing. */
+interface Memory<T> {
+  said: Set<T>;
+  last?: T;
+}
+
+/**
+ * The next thing to say from `pool`, so that pressing E again always moves on.
+ *
+ * Deepest stage first among what has not been said, so a newly unlocked stage is heard straight
+ * away instead of being shuffled in among the old material. Once everything has been said it
+ * goes round again - but never straight back to the line on screen. At the start a monument has
+ * just two lines, and the old reset picked the one already showing half the time: measured, 3
+ * presses in 20 at Giza changed nothing, which reads as E being broken.
+ */
+function nextFrom<T extends { stage: number }>(pool: T[], memory: Memory<T>): T | null {
+  if (pool.length === 0) return null;
+  let fresh = pool.filter((x) => !memory.said.has(x));
+  if (fresh.length === 0) {
+    for (const x of pool) memory.said.delete(x);
+    fresh = pool.length > 1 ? pool.filter((x) => x !== memory.last) : pool;
+  }
+  const deepest = Math.max(...fresh.map((x) => x.stage));
+  const top = fresh.filter((x) => x.stage === deepest);
+  const choice = top[Math.floor(Math.random() * top.length)];
+  memory.said.add(choice);
+  memory.last = choice;
+  return choice;
+}
+
 export class Dialogue {
   private lines: Line[] = [];
   private lore: LoreEntry[] = [];
-  /** Per-speaker memory of what they have already said, so nobody repeats until they must. */
-  private spoken = new Map<string, Set<number>>();
+  /** Per speaker and kind of line, and per place. */
+  private memory = new Map<string, Memory<unknown>>();
 
   async load(url: string): Promise<void> {
     try {
       const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as Corpus;
       this.lines = data.lines ?? [];
       this.lore = data.lore ?? [];
     } catch (err) {
-      console.error('[story] failed to load corpus', err);
+      // Loud, because the symptom is so quiet: nobody has anything to say and E does nothing.
+      console.error(`[story] could not load the dialogue from ${url}; talking and examining will be silent.`, err);
     }
   }
 
@@ -62,46 +94,26 @@ export class Dialogue {
     return this.lines.length + this.lore.length;
   }
 
+  private remember<T>(key: string): Memory<T> {
+    let m = this.memory.get(key);
+    if (!m) this.memory.set(key, (m = { said: new Set() }));
+    return m as Memory<T>;
+  }
+
   /**
-   * Picks a line for a speaker. Filters to their voice and place, allows anything up to the
-   * unlocked stage so early material keeps showing up, then prefers lines this particular
-   * speaker has not used yet.
+   * Picks a line for a speaker: their voice, their place, anything up to the unlocked stage, and
+   * whatever this particular speaker has not said yet.
    */
   pick(id: string, speaker: Speaker, kind: Line['kind'], stage: number): string | null {
-    const pool: number[] = [];
-    for (let i = 0; i < this.lines.length; i++) {
-      const l = this.lines[i];
-      if (l.kind !== kind) continue;
-      if (l.voice !== speaker.voice) continue;
-      if (l.band !== 'any' && l.band !== speaker.band) continue;
-      if (l.stage > stage) continue;
-      pool.push(i);
-    }
-    if (pool.length === 0) return null;
-
-    let used = this.spoken.get(id);
-    if (!used) {
-      used = new Set();
-      this.spoken.set(id, used);
-    }
-    let fresh = pool.filter((i) => !used.has(i));
-    if (fresh.length === 0) {
-      // Said everything they have; start over rather than going silent.
-      used.clear();
-      fresh = pool;
-    }
-    const choice = fresh[Math.floor(Math.random() * fresh.length)];
-    used.add(choice);
-    return this.lines[choice].text;
+    const pool = this.lines.filter(
+      (l) => l.kind === kind && l.voice === speaker.voice && (l.band === 'any' || l.band === speaker.band) && l.stage <= stage
+    );
+    return nextFrom(pool, this.remember<Line>(`${id}:${kind}`))?.text ?? null;
   }
 
   /** Environmental text for a place, deepening as the story unlocks. */
   pickLore(target: string, stage: number): string | null {
     const pool = this.lore.filter((l) => l.target === target && l.stage <= stage);
-    if (pool.length === 0) return null;
-    // Prefer the deepest available so a returning player gets new information.
-    const best = Math.max(...pool.map((l) => l.stage));
-    const top = pool.filter((l) => l.stage === best);
-    return top[Math.floor(Math.random() * top.length)].text;
+    return nextFrom(pool, this.remember<LoreEntry>(`lore:${target}`))?.text ?? null;
   }
 }

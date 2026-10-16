@@ -24,7 +24,11 @@ page.on('console', (msg) => {
 });
 page.on('pageerror', (err) => consoleErrors.push(String(err)));
 
-await page.goto(URL, { waitUntil: 'load' });
+// Opened one level down, not at the root. The dev server serves the app at any path, and a file
+// fetched relative to the PAGE (rather than the app's base) then comes back as the HTML page:
+// that is how the dialogue silently failed to load and left talk and examine doing nothing.
+// At the root every relative path happens to work, so the root cannot catch it.
+await page.goto(new globalThis.URL('smoke/', URL).href, { waitUntil: 'load' });
 await page.waitForFunction(() => {
   const g = window.__game;
   return g && g.renderer && g.renderer.info;
@@ -102,13 +106,14 @@ if (moved < 0.5) await walk('KeyS', 2000);
 if (moved < 0.5) await walk('KeyD', 2000);
 
 const end = await readPos();
+const dialogueLines = await page.evaluate(() => window.__game.dialogue?.size ?? 0);
 await page.screenshot({ path: '/tmp/wonders-smoke.png' });
 
 const litSamples = pixels.grid.filter((px) => px.slice(0, 3).some((v) => v > 8)).length;
 const nonBlack = litSamples >= 3;
 
 console.log(
-  JSON.stringify({ fps, litSamples, start, end, moved, consoleErrors }, null, 2)
+  JSON.stringify({ fps, litSamples, start, end, moved, dialogueLines, consoleErrors }, null, 2)
 );
 
 await browser.close();
@@ -119,6 +124,10 @@ if (consoleErrors.length) {
 }
 if (!nonBlack) {
   console.error('SMOKE FAIL: all sampled pixels are black');
+  process.exit(1);
+}
+if (dialogueLines === 0) {
+  console.error('SMOKE FAIL: the dialogue did not load, so nobody can be talked to');
   process.exit(1);
 }
 if (moved < 0.5) {

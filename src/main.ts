@@ -11,21 +11,26 @@ import {
 } from './world/planet';
 import { createWater, waveHeight } from './world/water';
 import { createProps, type Clearing } from './world/props';
-import { loadModel } from './world/assets';
-import { windTime } from './render/wind';
+import type { Footprint } from './world/dressing';
+import { loadModel, asset } from './world/assets';
+import { windTime, pushFrom } from './render/wind';
 import { updateDaylight } from './render/daylight';
 import { createWonders } from './world/wonders';
 import { createSettlements } from './world/settlements';
 import { createSpecials } from './world/special';
 import { createCaves } from './world/caves';
+import { createNotes } from './world/notes';
 import { createBoat } from './world/boat';
 import { createSky } from './render/sky';
 import { createToonGradient } from './render/toon';
 import { createBlobShadow, updateBlobShadow } from './render/blobShadow';
 import { Input } from './player/input';
 import { Controller } from './player/controller';
-import { Player, CHARACTERS } from './player/player';
-import { CameraRig } from './player/camera';
+import { Player, CHARACTERS, type CharacterId } from './player/player';
+import { CameraRig, fitFov } from './player/camera';
+import { createTouch } from './touch';
+import { createPhysics } from './physics/world';
+import { createRagdoll } from './player/ragdoll';
 import { createHud } from './ui';
 import { createTitle } from './title';
 import { Dialogue } from './story/dialogue';
@@ -52,7 +57,11 @@ const renderer = new THREE.WebGLRenderer({
   antialias: false,
   preserveDrawingBuffer: import.meta.env.DEV,
 });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// Phones get a lower cap. At 2x a six-inch screen is already past what the eye resolves, and
+// fill rate - this is an HDR, multisampled, mipmapped target - is what a phone GPU runs out of
+// first. 1.5 is about 44% fewer pixels than 2 for no visible loss at arm's length.
+const COARSE = matchMedia('(pointer: coarse)').matches;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, COARSE ? 1.5 : 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 // Tone mapping moved into the grade pass: three only tone maps when drawing to the default
@@ -89,6 +98,16 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   FAR_TITLE
 );
+
+/** The FOV asked for (play or viewfinder), before it is fitted to the screen's shape. */
+let baseFov = PLAY_FOV;
+function applyFov(fov = baseFov): void {
+  baseFov = fov;
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.fov = fitFov(baseFov, camera.aspect);
+  camera.updateProjectionMatrix();
+}
+applyFov();
 
 // Two passes, the second writing straight to the screen. HDR target so the glow has headroom
 // and the sky gradient does not band; its mip chain doubles as the glow's blur pyramid.
@@ -161,10 +180,33 @@ const input = new Input(renderer.domElement);
 const audio = createAudio();
 
 const hudEl = document.getElementById('hud')!;
-hudEl.innerHTML =
-  '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#f4f1ea;font-size:14px;letter-spacing:.08em;">Loading…</div>';
+hudEl.innerHTML = '<div class="loading"><span>Loading the world</span><i><b></b></i></div>';
+// ~38MB of models on a phone connection is a long wait to sit through with no sign of life.
+// GLTFLoader reports through the default manager, so this needs no wiring into the loaders.
+const loadBar = hudEl.querySelector('.loading b') as HTMLElement;
+let loadShown = 0;
+THREE.DefaultLoadingManager.onProgress = (_url, loaded, total) => {
+  // Monotonic: each later stage queues more files, which would otherwise pull the bar backwards.
+  loadShown = Math.max(loadShown, loaded / total);
+  loadBar.style.width = `${Math.round(loadShown * 100)}%`;
+};
+
+/** The body you chose last time, so a swap is not undone by every page load. */
+const CHAR_KEY = 'wonders.character';
+function savedCharacter(): CharacterId {
+  try {
+    const v = localStorage.getItem(CHAR_KEY);
+    if (v && v in CHARACTERS) return v as CharacterId;
+  } catch {
+    /* storage blocked: fall back to the default */
+  }
+  return 'woman';
+}
 
 async function boot(): Promise<void> {
+  // Started first and awaited last: the physics engine is its own download, and fetching it
+  // alongside the models costs nothing, where fetching it after them adds to every load.
+  const physicsReady = createPhysics(waterRadius);
   const [wonders, boat] = await Promise.all([
     createWonders(gradientMap, spawnDir),
     createBoat(gradientMap),
@@ -173,30 +215,46 @@ async function boot(): Promise<void> {
     // never stalls on a download - which is the whole point of loading behind the title.
     ...Object.values(CHARACTERS).map((c) => loadModel(c.path)),
   ]);
-  const player = await Player.create(gradientMap, 'woman');
+  const player = await Player.create(gradientMap, savedCharacter());
   scene.add(boat);
   scene.add(wonders.group);
   carveTerraces(planet, wonders.terraces);
   snapToGround();
 
-  const settlements = await createSettlements(
-    gradientMap,
-    planet.mesh,
-    wonders.sites.map((s) => s.position.clone().normalize())
-  );
+  // The one list of ground already built on. Each pass below checks it and adds to it, so
+  // nothing is ever seated inside something placed earlier. The spawn point is held clear so
+  // you never wake up inside somebody's house.
+  const monuments: Footprint[] = wonders.sites.map((s) => ({ position: s.position, radius: s.radius }));
+  const claimed: Footprint[] = [{ position: start.clone(), radius: 2.5 }, ...monuments];
+
+  const settlements = await createSettlements(gradientMap, planet.mesh, claimed);
   scene.add(settlements.group);
 
   // Three rare figures at the extremes of the world, outside any settlement.
-  const specials = await createSpecials(gradientMap, planet.mesh, spawnDir);
+  const specials = await createSpecials(gradientMap, planet.mesh, spawnDir, claimed);
   scene.add(specials.group);
 
   // Caves before flora and after everything else: they need to know what is already standing
   // so a secret never opens onto somebody's back garden.
-  const caves = await createCaves(gradientMap, spawnDir, [
-    ...settlements.landmarks.map((l) => l.position),
-    ...wonders.sites.map((s) => s.position),
-  ]);
+  const caves = await createCaves(
+    gradientMap,
+    spawnDir,
+    [...settlements.landmarks.map((l) => l.position), ...wonders.sites.map((s) => s.position)],
+    claimed
+  );
   scene.add(caves.group);
+
+  // The developer's notes, in corners the procedural world happens to offer this time.
+  const notes = createNotes(gradientMap, {
+    planetMesh: planet.mesh,
+    spawnDir,
+    wonders: wonders.sites,
+    caveSites: caves.sites,
+    caveMouths: caves.mouths,
+    landmarks: settlements.landmarks,
+    claimed,
+  });
+  scene.add(notes.group);
 
   // Flora goes in LAST, so it can be thinned around everything already standing: bare ground
   // where people live, and an open approach to each monument. Also after terracing, so plants
@@ -209,12 +267,26 @@ async function boot(): Promise<void> {
     ...wonders.sites.map((s) => ({ position: s.position, radius: 24, floor: 0.12 })),
     // Nothing grows through a rock chamber, but the ring just outside stays green.
     ...caves.sites.map((p) => ({ position: p, radius: 15, floor: 0, core: 8 })),
+    // A small clear patch round every note and keepsake, so the grass does not swallow them.
+    ...notes.notes.map((n) => ({ position: n.position, radius: 4, floor: 0.15, core: 1.5 })),
   ];
-  scene.add((await createProps(gradientMap, planet.mesh, clearings)).group);
+  const flora = await createProps(gradientMap, planet.mesh, clearings, {
+    footprints: settlements.footprints,
+    monuments,
+    monumentMesh: wonders.collisionMesh,
+  });
+  scene.add(flora.group);
 
   const dialogue = new Dialogue();
-  await dialogue.load('./story/corpus.json');
-  const collidables = [planet.mesh, wonders.collisionMesh, settlements.collisionMesh, caves.collisionMesh];
+  await dialogue.load(asset('story/corpus.json'));
+  const collidables = [planet.mesh, wonders.collisionMesh, settlements.collisionMesh, caves.collisionMesh, flora.collisionMesh];
+
+  // Rigid bodies: the same solid world as the controller sees, plus clutter that can be knocked
+  // about, plus - when she falls far enough - her own body.
+  const physics = await physicsReady;
+  for (const mesh of collidables) physics.addStatic(mesh);
+  physics.addLoose(settlements.loose);
+  const ragdoll = createRagdoll(physics);
 
   /**
    * 1 standing among people, 0 alone in open country. This is what chooses between the piano
@@ -253,12 +325,16 @@ async function boot(): Promise<void> {
   const rig = new CameraRig(camera);
   const hud = createHud(wonders.sites);
   // After createHud: it assigns hud.innerHTML, which would wipe the story's own elements.
-  const story = createStory(
+  const story = createStory({
     dialogue,
-    [...settlements.speakers, ...specials.speakers],
-    [...settlements.landmarks, ...caves.landmarks],
-    (voice, text) => audio.speak(voice, text)
-  );
+    speakers: allSpeakers,
+    landmarks: [...settlements.landmarks, ...caves.landmarks],
+    wonders: wonders.sites,
+    notes: notes.notes,
+    camera,
+    visited: hud.visited,
+    speak: (voice, text) => audio.speak(voice, text),
+  });
 
   const photos = await createPhotos({
     camera,
@@ -270,9 +346,12 @@ async function boot(): Promise<void> {
     caveSites: caves.sites,
     dialogue,
     playFov: PLAY_FOV,
+    setFov: applyFov,
     stage: () => Math.min(4, hud.wondersFound),
     feet: () => controller.feet,
   });
+  // Last, so its buttons sit over everything the HUD, story and camera have already built.
+  createTouch(input);
 
   // Framing the whole planet. The bulk of the globe sits around radius 85 even though rare peaks
   // reach ~108, so framing to the peaks leaves the world looking small in frame. 205 fills about
@@ -303,6 +382,59 @@ async function boot(): Promise<void> {
   const deck = new THREE.Vector3();
   const DECK_HEIGHT = 0.42;
   const MAX_PHYSICS_STEP = 0.02;
+  /** How close you can stand to somebody before you are walking through them. */
+  const BODY_RADIUS = 0.5;
+  const bodies = allSpeakers.map((s) => s.position);
+  /** Grass within this of the feet parts around them. */
+  const GRASS_PUSH = 1.1;
+  /**
+   * Falling faster than this, she goes limp instead of landing - about a four-unit drop, a
+   * roof or a terrace edge. A full jump on flat ground lands at roughly 10.5, well under it.
+   */
+  const RAGDOLL_FALL = 17;
+  /** While she is down, the camera and everything else follows the ground under her waist. */
+  const lying = new THREE.Vector3();
+  const getUpRay = new THREE.Raycaster();
+  getUpRay.firstHitOnly = true;
+
+  function standUp(): void {
+    const { pelvis, facing } = ragdoll.finish();
+    const u = pelvis.clone().normalize();
+    // Feet on whatever is under where she came to rest: the ground, a roof, or the sea.
+    getUpRay.set(pelvis.clone().addScaledVector(u, 1.5), u.clone().negate());
+    getUpRay.near = 0;
+    getUpRay.far = 5;
+    const hit = getUpRay.intersectObjects(collidables, false)[0];
+    const feet = hit ? hit.point.clone() : pelvis.clone().addScaledVector(u, -0.3);
+    if (feet.length() < waterRadius) feet.setLength(waterRadius);
+    controller.placeAt(feet);
+    player.standUp(feet, facing);
+  }
+
+  // The boat rides the swell: pitched and rolled to the slope of the wave under it, so the hull
+  // rocks with the sea you can see instead of sliding across it flat. Half-length and half-beam
+  // are where the slope is sampled - roughly the hull's own size.
+  const BOAT_HALF_LENGTH = 0.9;
+  const BOAT_HALF_BEAM = 0.55;
+  const bow = new THREE.Vector3();
+  const beam = new THREE.Vector3();
+  const probe = new THREE.Vector3();
+  const rock = new THREE.Quaternion();
+  const rockTarget = new THREE.Quaternion();
+  const rockEuler = new THREE.Euler();
+  function rockOnWaves(dt: number, facing: THREE.Quaternion): void {
+    const t = windTime.value;
+    const wave = (axis: THREE.Vector3, d: number): number =>
+      waveHeight(probe.copy(controller.feet).addScaledVector(axis, d), t);
+    // Bodies face +Z, so that is the bow and +X the beam.
+    bow.set(0, 0, 1).applyQuaternion(facing);
+    beam.set(1, 0, 0).applyQuaternion(facing);
+    const pitch = Math.atan2(wave(bow, BOAT_HALF_LENGTH) - wave(bow, -BOAT_HALF_LENGTH), 2 * BOAT_HALF_LENGTH);
+    const roll = Math.atan2(wave(beam, BOAT_HALF_BEAM) - wave(beam, -BOAT_HALF_BEAM), 2 * BOAT_HALF_BEAM);
+    // A positive X turn dips +Z, so the bow rises on a higher wave ahead by negating it.
+    rockTarget.setFromEuler(rockEuler.set(-pitch, 0, roll));
+    rock.slerp(rockTarget, 1 - Math.exp(-5 * dt));
+  }
   let elapsed = 0;
   let lastTick = performance.now();
 
@@ -404,54 +536,94 @@ async function boot(): Promise<void> {
     // The pointer only steers the view while the camera is up.
     rig.freeLook = photos.aiming;
     if (input.justPressed('Tab') && photos.aiming) photos.cycleFilm();
-    if (input.justPressed('KeyC')) {
-      void player.setCharacter(player.character === 'woman' ? 'man' : 'woman');
+    if (input.justPressed('Enter') && photos.aiming) photos.shoot();
+    if (input.justPressed('KeyR')) hud.flash(input.running ? 'running' : 'walking');
+    if (input.justPressed('KeyC') && !ragdoll.active) {
+      const next: CharacterId = player.character === 'woman' ? 'man' : 'woman';
+      void player.setCharacter(next);
+      try {
+        localStorage.setItem(CHAR_KEY, next);
+      } catch {
+        /* the swap still happens, it just will not be remembered */
+      }
     }
 
     up.copy(controller.feet).normalize();
-    rig.update(dt, controller.feet, up, input, collidables, controller.flatVel);
-    // Substep the physics. Sprinting covers 9.4 * 0.05 = 0.47 units in one clamped frame,
-    // which is enough to step straight through a hillside during a lag spike and end up
-    // under the terrain. Measured: 0.05 tunnels on 22 of 40 sprints, 0.02 on none.
-    let remaining = dt;
-    while (remaining > 1e-6) {
-      const step = Math.min(remaining, MAX_PHYSICS_STEP);
-      controller.update(step, input, collidables, waterRadius, rig.moveForward);
-      remaining -= step;
+    if (!ragdoll.active) {
+      rig.update(dt, controller.feet, up, input, collidables, controller.flatVel);
+      // Substep the physics. Sprinting covers 9.4 * 0.05 = 0.47 units in one clamped frame,
+      // which is enough to step straight through a hillside during a lag spike and end up
+      // under the terrain. Measured: 0.05 tunnels on 22 of 40 sprints, 0.02 on none.
+      let remaining = dt;
+      while (remaining > 1e-6) {
+        const step = Math.min(remaining, MAX_PHYSICS_STEP);
+        controller.update(step, input, collidables, waterRadius, rig.moveForward);
+        remaining -= step;
+      }
+      controller.depenetrate(collidables);
+      controller.pushOutOf(bodies, BODY_RADIUS);
+      // A long fall ends in a heap, not a landing. Not over the sea: water catches you.
+      if (controller.fallSpeed > RAGDOLL_FALL && controller.feet.length() > waterRadius + 1.5) {
+        player.limp = true;
+        ragdoll.start(player.body, player.facingQuaternion, controller.vel);
+        if (!ragdoll.active) player.limp = false; // a body it does not recognise stays animated
+      }
     }
+    physics.step(dt, controller.feet, !ragdoll.active);
+    if (ragdoll.active) {
+      if (ragdoll.update(dt)) standUp();
+    }
+    // While she is down, everything that follows her follows the ground under her waist.
+    const down = ragdoll.active;
+    if (down) {
+      up.copy(ragdoll.focus).normalize();
+      lying.copy(ragdoll.focus).addScaledVector(up, -0.9);
+      rig.update(dt, lying, up, input, collidables);
+    }
+    const feet = down ? lying : controller.feet;
+    pushFrom.value.set(feet.x, feet.y, feet.z, GRASS_PUSH);
 
     // Step into the boat on contact with water, and back out again on land.
-    const afloat = controller.feet.length() <= waterRadius + 0.06;
+    const afloat = !down && controller.feet.length() <= waterRadius + 0.06;
     boat.visible = afloat;
     if (afloat) {
       // The controller clamps to a fixed water radius, so the boat has to be lifted onto the
       // displaced surface itself or it sits half-buried in every trough.
       const lift = waveHeight(controller.feet, windTime.value);
       boat.position.copy(controller.feet).addScaledVector(up, lift);
-      boat.quaternion.copy(player.group.quaternion);
       player.setPosition(deck.copy(boat.position).addScaledVector(up, DECK_HEIGHT));
-    } else {
+    } else if (!down) {
+      // (While she is down the ragdoll has the skeleton, and the root stays where she fell from.)
       player.setPosition(controller.feet);
+      rock.identity();
     }
     player.update(dt, controller, rig.moveForward);
-    updateBlobShadow(shadow, controller.feet, controller.grounded, up);
-    settlements.update(controller.feet, dt);
-    specials.update(controller.feet, dt);
-    story.update(dt, controller.feet, hud.wondersFound);
-    if (input.justPressed('KeyE')) story.interact();
+    if (afloat) {
+      // After player.update, which rebuilds her quaternion from pure facing every frame - so the
+      // rock is applied exactly once, to the hull and to her standing in it.
+      rockOnWaves(dt, player.group.quaternion);
+      boat.quaternion.copy(player.group.quaternion).multiply(rock);
+      player.group.quaternion.copy(boat.quaternion);
+    }
+    updateBlobShadow(shadow, feet, down || controller.grounded, up);
+    settlements.update(feet, dt);
+    specials.update(feet, dt);
+    story.update(dt, feet, rig.moveForward, afloat, hud.wondersFound);
+    if (input.justPressed('KeyE') && !down) story.interact();
 
     // Fed the same wave function the water shader uses, so the surf you hear is the swell you
     // can see moving under you.
     audio.update(dt, {
-      altitude: controller.feet.length() - waterRadius,
-      swell: waveHeight(controller.feet, windTime.value),
+      altitude: feet.length() - waterRadius,
+      swell: waveHeight(feet, windTime.value),
       afloat,
       speed: controller.flatSpeed,
-      enclosed: caveEnclosure(controller.feet),
-      settled: settledness(controller.feet),
+      enclosed: caveEnclosure(feet),
+      settled: settledness(feet),
     });
     photos.update(dt);
-    hud.update(now, controller.feet, rig.moveForward);
+    notes.update(elapsed, story.isRead);
+    hud.update(now, feet, rig.moveForward, story.lead, story.keepsakes);
     composer.render(dt);
     // Directly after the draw and inside the same task: preserveDrawingBuffer is off in a
     // production build, so this is the only moment the canvas can still be read.
@@ -474,6 +646,12 @@ async function boot(): Promise<void> {
       landmarks: settlements.landmarks,
       wonderSites: wonders.sites,
       caveSites: caves.sites,
+      notes: notes.notes,
+      story,
+      dialogue,
+      physics,
+      ragdoll,
+      loose: settlements.loose,
       audio,
       speakers: [...settlements.speakers, ...specials.speakers],
     };
@@ -483,8 +661,7 @@ async function boot(): Promise<void> {
 boot();
 
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
+  applyFov();
   renderer.setSize(window.innerWidth, window.innerHeight);
   composer.setSize(window.innerWidth, window.innerHeight);
 });

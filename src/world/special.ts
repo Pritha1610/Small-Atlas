@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { PLANET_RADIUS, WATER_Y } from './planet';
 import { loadModel, applyToonMaterial } from './assets';
+import { blocked, type Footprint } from './dressing';
 import type { Speaker } from './settlements';
 
 /**
@@ -59,7 +60,9 @@ export interface Specials {
 export async function createSpecials(
   gradientMap: THREE.Texture,
   planetMesh: THREE.Mesh,
-  spawnDir: THREE.Vector3
+  spawnDir: THREE.Vector3,
+  /** Ground already built on. A peak can be someone's roof, and nobody waits inside a wall. */
+  claimed: Footprint[]
 ): Promise<Specials> {
   const group = new THREE.Group();
   const speakers: Speaker[] = [];
@@ -89,6 +92,7 @@ export async function createSpecials(
     probe.set(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize();
     const p = surface(probe);
     if (!p) continue;
+    if (blocked(claimed, p, 1)) continue;
     const r = p.length();
     if (r > peakR) {
       peakR = r;
@@ -153,12 +157,14 @@ export async function createSpecials(
       mixers.push({ root: body, mixer });
     }
 
+    claimed.push({ position: spot.clone(), radius: 1 });
     speakers.push({
       id: `rare-${spec.file}`,
       name: spec.name,
       voice: spec.voice,
       band: 'any',
       position: spot.clone(),
+      root: body,
     });
   });
 

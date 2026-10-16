@@ -43,6 +43,8 @@ export type CharacterId = keyof typeof CHARACTERS;
 
 /** Height every body is scaled to, so the camera and boat deck do not care which one is on. */
 const TARGET_HEIGHT = 1.65;
+/** Seconds to get up: the ragdoll's last pose eases into the animation over this. */
+const GET_UP = 0.6;
 
 function findClip(clips: THREE.AnimationClip[], ...names: string[]): THREE.AnimationClip | undefined {
   return clips.find((c) => names.some((n) => c.name.toLowerCase().includes(n)));
@@ -67,6 +69,10 @@ export class Player {
 
   private who: CharacterId = 'woman';
   private swapping = false;
+  /** While true the ragdoll owns the skeleton and update() leaves it alone. */
+  limp = false;
+  private getUp = 1;
+  private from = new Map<THREE.Object3D, { p: THREE.Vector3; q: THREE.Quaternion }>();
 
   private constructor(gradientMap: THREE.Texture) {
     this.gradientMap = gradientMap;
@@ -74,6 +80,52 @@ export class Player {
 
   get character(): CharacterId {
     return this.who;
+  }
+
+  /** The skinned body, for the ragdoll to take hold of. */
+  get body(): THREE.Object3D {
+    return this.model;
+  }
+
+  get facingQuaternion(): THREE.Quaternion {
+    return this.facing;
+  }
+
+  /**
+   * Back on her feet at `feet`, facing along `look`, starting from whatever pose the ragdoll left
+   * the skeleton in. Moving the body to the new spot would drag that pose with it, so each bone's
+   * world pose is kept and re-expressed under the moved root, and then eased into the animation.
+   */
+  standUp(feet: THREE.Vector3, look: THREE.Vector3): void {
+    const worlds = new Map<THREE.Object3D, THREE.Matrix4>();
+    this.model.traverse((o) => worlds.set(o, o.matrixWorld.clone()));
+
+    const up = feet.clone().normalize();
+    const dir = look.clone().addScaledVector(up, -look.dot(up));
+    if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0).addScaledVector(up, -up.x);
+    dir.normalize();
+    this._dir.copy(dir);
+    this._basis.makeBasis(this._xAxis.crossVectors(up, dir).normalize(), up, dir);
+    this.facing.setFromRotationMatrix(this._basis);
+    this.group.position.copy(feet);
+    this.group.quaternion.copy(this.facing);
+    this.group.updateMatrixWorld(true);
+
+    const inv = new THREE.Matrix4();
+    const s = new THREE.Vector3();
+    this.from.clear();
+    // traverse() visits a parent before its children, so each parent is already re-placed.
+    this.model.traverse((o) => {
+      if (!(o as THREE.Bone).isBone || !o.parent) return;
+      const keep = o.scale.clone();
+      inv.copy(o.parent.matrixWorld).invert().multiply(worlds.get(o)!);
+      inv.decompose(o.position, o.quaternion, s);
+      o.scale.copy(keep);
+      o.updateMatrixWorld(true);
+      this.from.set(o, { p: o.position.clone(), q: o.quaternion.clone() });
+    });
+    this.getUp = 0;
+    this.limp = false;
   }
 
   /** Swaps body in place. Both are preloaded, so this is a cache hit and finishes in a frame. */
@@ -111,6 +163,11 @@ export class Player {
       if (hex) (mesh.material as THREE.MeshToonMaterial).color.set(hex);
     });
     root.scale.setScalar(TARGET_HEIGHT / spec.native);
+    // A ragdoll can tumble well away from where the body's bind-pose bounds say it is, and be
+    // culled while it is in plain view.
+    root.traverse((o) => {
+      if ((o as THREE.SkinnedMesh).isSkinnedMesh) o.frustumCulled = false;
+    });
 
     this.model = root;
     this.group.add(this.model);
@@ -137,6 +194,7 @@ export class Player {
   }
 
   update(dt: number, controller: Controller, forward: THREE.Vector3): void {
+    if (this.limp) return;
     const speed = controller.flatSpeed;
     const moving = speed > 0.4;
     const running = speed > (WALK + RUN) / 2;
@@ -157,6 +215,16 @@ export class Player {
       // travelling or the feet skate, which a slower walk makes obvious.
       if (this.walkAction) this.walkAction.timeScale = THREE.MathUtils.clamp(speed / WALK, 0.55, 1.5);
       if (this.runAction) this.runAction.timeScale = THREE.MathUtils.clamp(speed / RUN, 0.6, 1.4);
+      if (this.getUp < 1) {
+        // Getting up: from the pose she landed in toward what the animation wants, eased.
+        this.getUp = Math.min(1, this.getUp + dt / GET_UP);
+        const k = this.getUp * this.getUp * (3 - 2 * this.getUp);
+        for (const [bone, f] of this.from) {
+          this.tmpQ.copy(bone.quaternion);
+          bone.quaternion.copy(f.q).slerp(this.tmpQ, k);
+          bone.position.lerpVectors(f.p, bone.position, k);
+        }
+      }
     } else {
       if (moving) this.phase += (running ? 13 : 9) * dt;
       const amp = running ? 0.06 : 0.035;

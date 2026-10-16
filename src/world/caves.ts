@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { PLANET_RADIUS, WATER_Y, sampleHeight } from './planet';
 import { loadModel, applyToonMaterial } from './assets';
-import { tangentsOf, place } from './dressing';
+import { tangentsOf, place, blocked, type Footprint } from './dressing';
 import { fbm } from './noise';
 import type { Landmark } from './settlements';
 
@@ -119,6 +119,8 @@ export interface Caves {
   landmarks: Landmark[];
   /** Centres, so flora can be kept out of a chamber. */
   sites: THREE.Vector3[];
+  /** Unit direction from each centre out through its mouth, in world space. */
+  mouths: THREE.Vector3[];
 }
 
 /** Local relief over the chamber footprint. A cave needs somewhere to stand. */
@@ -258,11 +260,15 @@ function markGeometry(kind: 'hands' | 'tallies' | 'cairn'): THREE.BufferGeometry
 export async function createCaves(
   gradientMap: THREE.Texture,
   spawnDir: THREE.Vector3,
-  avoid: THREE.Vector3[]
+  avoid: THREE.Vector3[],
+  /** Everything solid already standing. The secrecy gap above is about settlements; this is
+   *  about walls, so a landmark or a walkway can never stand inside a chamber. */
+  claimed: Footprint[]
 ): Promise<Caves> {
   const group = new THREE.Group();
   const landmarks: Landmark[] = [];
   const sites: THREE.Vector3[] = [];
+  const mouths: THREE.Vector3[] = [];
 
   // Footprint in radians, used both for the flatness probe and for spacing.
   const footprint = R_CHAMBER / PLANET_RADIUS;
@@ -290,7 +296,9 @@ export async function createCaves(
       if (avoid.some((a) => a.distanceTo(p) < gap)) continue;
       // Cave-to-cave spacing never relaxes: two secrets in sight of each other is one secret.
       if (dirs.some((d) => d.angleTo(probe) * PLANET_RADIUS < 30)) continue;
+      if (blocked(claimed, p, R_CHAMBER + 1)) continue;
       dirs.push(probe.clone());
+      claimed.push({ position: p, radius: R_CHAMBER });
     }
   }
 
@@ -400,6 +408,7 @@ export async function createCaves(
 
     group.add(cave);
     sites.push(centre.clone());
+    mouths.push(mouthWorld.clone());
     landmarks.push({ target: 'place:cave', position: centre.clone() });
   });
 
@@ -416,5 +425,6 @@ export async function createCaves(
     collisionMesh,
     landmarks,
     sites,
+    mouths,
   };
 }
